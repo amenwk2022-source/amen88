@@ -1,0 +1,106 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "System user with role-based access control.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Full name of the user" },
+        "email": { "type": "string", "format": "email", "description": "Email address" },
+        "role": { "type": "string", "enum": ["admin", "lawyer", "staff"], "description": "User role" }
+      },
+      "required": ["name", "email", "role"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "Legal office client information.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "phone": { "type": "string", "description": "Unique phone number" },
+        "civilId": { "type": "string" },
+        "address": { "type": "string" },
+        "poaNumber": { "type": "string", "description": "Power of Attorney number" }
+      },
+      "required": ["name", "phone"]
+    },
+    "Case": {
+      "title": "Case",
+      "description": "Legal case details.",
+      "type": "object",
+      "properties": {
+        "clientId": { "type": "string" },
+        "caseNumber": { "type": "string" },
+        "year": { "type": "string" },
+        "court": { "type": "string" },
+        "circuit": { "type": "string" },
+        "autoNumber": { "type": "string" },
+        "opponent": { "type": "string" },
+        "caseType": { "type": "string" },
+        "status": { "type": "string", "enum": ["pre-filing", "active", "execution", "archive"] },
+        "lawyerId": { "type": "string" }
+      },
+      "required": ["clientId", "status"]
+    },
+    "Session": {
+      "title": "Session",
+      "description": "Court session or expert meeting.",
+      "type": "object",
+      "properties": {
+        "caseId": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "decision": { "type": "string" },
+        "nextDate": { "type": "string", "format": "date-time" },
+        "lawyerId": { "type": "string" }
+      },
+      "required": ["caseId", "date"]
+    },
+    "Procedure": {
+      "title": "Procedure",
+      "description": "Administrative or legal procedure.",
+      "type": "object",
+      "properties": {
+        "caseId": { "type": "string" },
+        "type": { "type": "string" },
+        "staffId": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "notes": { "type": "string" }
+      },
+      "required": ["caseId", "type", "date"]
+    },
+    "Finance": {
+      "title": "Finance",
+      "description": "Financial records for a case.",
+      "type": "object",
+      "properties": {
+        "caseId": { "type": "string" },
+        "totalFees": { "type": "number" },
+        "receivedAmount": { "type": "number" },
+        "expenses": { "type": "number" },
+        "sundries": { "type": "number" }
+      },
+      "required": ["caseId"]
+    },
+    "Document": {
+      "title": "Document",
+      "description": "Scanned documents or PDFs.",
+      "type": "object",
+      "properties": {
+        "caseId": { "type": "string" },
+        "title": { "type": "string" },
+        "fileUrl": { "type": "string" },
+        "uploadDate": { "type": "string", "format": "date-time" }
+      },
+      "required": ["caseId", "title", "fileUrl"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": { "schema": "User", "description": "User profiles" },
+    "/clients/{clientId}": { "schema": "Client", "description": "Client records" },
+    "/cases/{caseId}": { "schema": "Case", "description": "Legal cases" },
+    "/sessions/{sessionId}": { "schema": "Session", "description": "Court sessions" },
+    "/procedures/{procedureId}": { "schema": "Procedure", "description": "Case procedures" },
+    "/finance/{financeId}": { "schema": "Finance", "description": "Financial records" },
+    "/documents/{documentId}": { "schema": "Document", "description": "Case documents" }
+  }
+}
