@@ -41,6 +41,7 @@ export interface Session {
   decision?: string;
   nextDate?: string;
   lawyerId?: string;
+  notes?: string;
   caseInfo?: Partial<Case>;
 }
 
@@ -68,4 +69,36 @@ export interface Document {
   title: string;
   fileUrl: string;
   uploadDate: string;
+}
+
+export interface Judgment {
+  id: string;
+  caseId: string;
+  date: string;
+  type: 'initial' | 'appeal' | 'cassation';
+  result: string;
+  appealDeadline: string; // ISO date
+  isAppealed: boolean;
+  notes?: string;
+}
+
+export interface ExpertSession {
+  id: string;
+  caseId: string;
+  date: string;
+  expertName: string;
+  officeLocation: string;
+  status: 'pending' | 'attended' | 'postponed';
+  notes?: string;
+  caseInfo?: Partial<Case>;
+}
+
+export interface AppNotification {
+  id: string;
+  title: string;
+  message: string;
+  type: 'deadline' | 'session' | 'system';
+  date: string;
+  isRead: boolean;
+  link?: string;
 }

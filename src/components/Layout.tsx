@@ -33,6 +33,8 @@ const navItems = [
   { path: '/clients', label: 'الموكلين', icon: Users },
   { path: '/cases', label: 'القضايا', icon: Briefcase },
   { path: '/sessions', label: 'رول الجلسات', icon: CalendarClock },
+  { path: '/expert-sessions', label: 'جلسات الخبراء', icon: Users },
+  { path: '/deadlines', label: 'المواعيد القانونية', icon: Bell },
   { path: '/procedures', label: 'الإجراءات', icon: ClipboardList },
   { path: '/documents', label: 'الأرشيف الضوئي', icon: FileText },
   { path: '/finance', label: 'المالية', icon: DollarSign },

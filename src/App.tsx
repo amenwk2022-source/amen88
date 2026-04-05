@@ -9,10 +9,13 @@ import Dashboard from './components/Dashboard';
 import ClientManagement from './components/ClientManagement';
 import CaseManagement from './components/CaseManagement';
 import SessionRelay from './components/SessionRelay';
+import AdminDashboard from './components/AdminDashboard';
 import FinanceManagement from './components/Finance';
 import EDMS from './components/EDMS';
 import Procedures from './components/Procedures';
 import Reports from './components/Reports';
+import LegalDeadlines from './components/LegalDeadlines';
+import ExpertSessions from './components/ExpertSessions';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 export default function App() {
@@ -59,19 +62,29 @@ export default function App() {
   return (
     <ErrorBoundary>
       <Router>
-        <Layout user={user}>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/clients" element={<ClientManagement />} />
-            <Route path="/cases" element={<CaseManagement />} />
-            <Route path="/sessions" element={<SessionRelay />} />
-            <Route path="/procedures" element={<Procedures user={user} />} />
-            <Route path="/documents" element={<EDMS />} />
-            <Route path="/finance" element={<FinanceManagement />} />
-            <Route path="/reports" element={<Reports />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </Layout>
+        <Routes>
+          <Route path="/admin-dashboard" element={<AdminDashboard />} />
+          <Route
+            path="*"
+            element={
+              <Layout user={user}>
+                <Routes>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/clients" element={<ClientManagement />} />
+                  <Route path="/cases" element={<CaseManagement />} />
+                  <Route path="/sessions" element={<SessionRelay />} />
+                  <Route path="/procedures" element={<Procedures user={user} />} />
+                  <Route path="/documents" element={<EDMS />} />
+                  <Route path="/finance" element={<FinanceManagement />} />
+                  <Route path="/reports" element={<Reports />} />
+                  <Route path="/deadlines" element={<LegalDeadlines />} />
+                  <Route path="/expert-sessions" element={<ExpertSessions />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </Layout>
+            }
+          />
+        </Routes>
       </Router>
     </ErrorBoundary>
   );

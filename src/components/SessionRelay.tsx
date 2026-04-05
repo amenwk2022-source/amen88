@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, where, getDoc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { CalendarClock, ArrowRightLeft, AlertCircle, CheckCircle2, Clock, Search, Filter, Download, MessageSquare, Save, X, Scale, FileText, ImageIcon, Trash2 } from 'lucide-react';
+import { CalendarClock, ArrowRightLeft, AlertCircle, CheckCircle2, Clock, Search, Filter, Download, MessageSquare, Save, X, Scale, FileText, ImageIcon, Trash2, Printer, CalendarDays, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Session, Case } from '../types';
 import { cn } from '../lib/utils';
@@ -15,7 +15,8 @@ export default function SessionRelay() {
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'today' | 'upcoming' | 'omitted' | 'search'>('today');
-  const [searchDate, setSearchDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedCourt, setSelectedCourt] = useState('ALL');
   const [editingSession, setEditingSession] = useState<Session | null>(null);
   const [decision, setDecision] = useState('');
   const [nextDate, setNextDate] = useState('');
@@ -210,19 +211,29 @@ export default function SessionRelay() {
 
   const todayStr = new Date().toISOString().split('T')[0];
   
-  const filteredSessions = sessions.filter(s => {
-    const sDate = s.date.split('T')[0];
-    if (activeTab === 'today') return sDate === todayStr;
-    if (activeTab === 'upcoming') return sDate > todayStr;
-    if (activeTab === 'omitted') return sDate < todayStr && !s.decision;
-    if (activeTab === 'search') return sDate === searchDate;
-    return true;
-  }).map(s => ({
+  const allSessionsWithCase = sessions.map(s => ({
     ...s,
     caseInfo: cases.find(c => c.id === s.caseId)
   }));
 
-  const displayDate = activeTab === 'search' ? new Date(searchDate) : new Date();
+  const filteredSessions = allSessionsWithCase.filter(s => {
+    const sDate = s.date.split('T')[0];
+    const courtMatch = selectedCourt === 'ALL' || s.caseInfo?.court === selectedCourt;
+    
+    if (activeTab === 'today') return sDate === todayStr && courtMatch;
+    if (activeTab === 'upcoming') return sDate > todayStr && courtMatch;
+    if (activeTab === 'omitted') return sDate < todayStr && !s.decision && courtMatch;
+    if (activeTab === 'search') return sDate === selectedDate && courtMatch;
+    return courtMatch;
+  });
+
+  const courts = ['ALL', ...new Set(cases.map(c => c.court).filter(Boolean))];
+
+  const displayDate = activeTab === 'search' ? new Date(selectedDate) : new Date();
+
+  const formatDate = (date: Date) => {
+    return format(date, 'EEEE, dd MMMM yyyy', { locale: arSA });
+  };
 
   return (
     <div className="space-y-6 rtl pb-20" dir="rtl">
@@ -241,38 +252,52 @@ export default function SessionRelay() {
         )}
       </AnimatePresence>
 
-      {/* Legal Header */}
-      <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm text-center space-y-4 relative overflow-hidden">
+      {/* Legal Header & Controls */}
+      <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6 relative overflow-hidden print:hidden">
         <div className="absolute top-0 left-0 w-full h-1 bg-indigo-600" />
-        <div className="flex flex-col items-center gap-2">
-          <Scale className="w-10 h-10 text-indigo-600 mb-2" />
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight">مكتب المحامي محمد امين علي الصايغ</h2>
-          <div className="w-24 h-1 bg-slate-100 rounded-full" />
-        </div>
         
-        <div className="py-4">
-          <h1 className="text-4xl font-black text-indigo-600 mb-2">
-            رول يوم {format(displayDate, 'EEEE', { locale: arSA })}
-          </h1>
-          <p className="text-slate-500 font-bold text-lg">
-            الموافق {format(displayDate, 'dd MMMM yyyy', { locale: arSA })}
-          </p>
-        </div>
-
-          <div className="flex flex-wrap items-center justify-center gap-4 pt-4 border-t border-slate-50">
+        <div className="flex flex-col md:flex-row justify-between items-end md:items-center gap-4">
+          <div className="text-right">
+            <h2 className="text-2xl font-black text-slate-900 flex items-center gap-2">
+              <CalendarDays className="w-8 h-8 text-indigo-600" />
+              رول الجلسات اليومي
+            </h2>
+            <p className="text-slate-500 font-bold">إدارة الجلسات اليومية وطباعة الرول للمحامين</p>
+          </div>
+          
+          <div className="flex flex-wrap gap-3 items-center">
             <div className="flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-xl border border-slate-100">
               <Search className="w-4 h-4 text-slate-400" />
               <input 
                 type="date" 
                 className="bg-transparent border-none text-sm font-bold text-slate-700 outline-none"
-                value={searchDate}
+                value={selectedDate}
                 onChange={(e) => {
-                  setSearchDate(e.target.value);
+                  setSelectedDate(e.target.value);
                   setActiveTab('search');
                 }}
               />
             </div>
+
+            <select 
+              className="bg-white border border-slate-200 text-slate-700 py-2 px-4 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-600 shadow-sm"
+              value={selectedCourt}
+              onChange={(e) => setSelectedCourt(e.target.value)}
+            >
+              <option value="ALL">جميع المحاكم</option>
+              {courts.filter(c => c !== 'ALL').map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+
             <div className="flex gap-2">
+              <button 
+                onClick={() => window.print()}
+                className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-slate-900 transition-all shadow-sm"
+              >
+                <Printer className="w-4 h-4" />
+                <span>طباعة الرول</span>
+              </button>
               <button 
                 onClick={exportAsPDF}
                 disabled={isExporting}
@@ -281,27 +306,13 @@ export default function SessionRelay() {
                 <FileText className="w-4 h-4" />
                 تصدير PDF
               </button>
-              <button 
-                onClick={exportAsImage}
-                disabled={isExporting}
-                className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl font-bold text-sm hover:bg-slate-50 transition-all shadow-sm disabled:opacity-50"
-              >
-                <ImageIcon className="w-4 h-4" />
-                تصدير صورة
-              </button>
-              <button 
-                onClick={() => window.print()}
-                className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl font-bold text-sm hover:bg-slate-50 transition-all shadow-sm"
-              >
-                <Download className="w-4 h-4" />
-                طباعة
-              </button>
             </div>
           </div>
+        </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex items-center gap-4 border-b border-slate-200">
+      {/* Tabs - Hidden on Print */}
+      <div className="flex items-center gap-4 border-b border-slate-200 print:hidden">
         {[
           { id: 'today', label: 'رول اليوم', icon: Clock, count: sessions.filter(s => s.date.split('T')[0] === todayStr).length },
           { id: 'upcoming', label: 'الجلسات القادمة', icon: CalendarClock, count: sessions.filter(s => s.date.split('T')[0] > todayStr).length },
@@ -338,23 +349,42 @@ export default function SessionRelay() {
       </div>
 
       {/* Sessions List - Formal Table */}
-      <div className="space-y-4 print:m-0">
-        {filteredSessions.length > 0 ? (
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden print:border-slate-900 print:rounded-none">
-            <table className="w-full text-right border-collapse">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 print:bg-slate-100 print:border-slate-900">
-                  <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 w-12 text-center print:text-slate-900 print:border-slate-900">#</th>
-                  <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">المحكمة</th>
-                  <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">الدائرة</th>
-                  <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">رقم القضية</th>
-                  <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">الموكل</th>
-                  <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">الخصم</th>
-                  <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest print:text-slate-900">القرار / الإجراء</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 print:divide-slate-900">
-                {filteredSessions.map((session, index) => (
+      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden print:border-slate-900 print:rounded-none">
+        
+        {/* Print Header */}
+        <div className="hidden print:block p-8 border-b border-slate-900 text-center">
+          <div className="flex justify-between items-start mb-6">
+             <div className="text-right">
+                <h2 className="font-black text-2xl text-slate-900">مكتب المحامي محمد امين علي الصايغ</h2>
+                <p className="text-sm text-slate-500 font-bold">للمحاماة والاستشارات القانونية</p>
+             </div>
+             <div className="text-left">
+                <p className="font-bold text-slate-900">التاريخ: {new Date().toLocaleDateString('ar-EG')}</p>
+             </div>
+          </div>
+          
+          <h1 className="text-3xl font-black mb-4 bg-slate-100 inline-block px-10 py-3 rounded-xl border-2 border-slate-900">
+            رول جلسات: {formatDate(displayDate)}
+          </h1>
+          {selectedCourt !== 'ALL' && <p className="text-xl font-black mt-2 text-indigo-600">المحكمة: {selectedCourt}</p>}
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-right border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200 print:bg-slate-100 print:border-slate-900">
+                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 w-12 text-center print:text-slate-900 print:border-slate-900">#</th>
+                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">المحكمة</th>
+                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">الدائرة</th>
+                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">رقم القضية</th>
+                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">الموكل</th>
+                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">الخصم</th>
+                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest print:text-slate-900">القرار</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 print:divide-slate-900">
+              {filteredSessions.length > 0 ? (
+                filteredSessions.map((session, index) => (
                   <motion.tr
                     layout
                     key={session.id}
@@ -391,7 +421,7 @@ export default function SessionRelay() {
                       <div className="flex flex-col gap-2">
                         {session.decision ? (
                           <div className="flex items-start gap-3">
-                            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5 print:hidden" />
+                            <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5 print:text-slate-900" />
                             <div>
                               <p className="text-sm font-bold text-emerald-900 print:text-slate-900">{session.decision}</p>
                               {session.nextDate && (
@@ -402,18 +432,21 @@ export default function SessionRelay() {
                             </div>
                           </div>
                         ) : (
-                          <button
-                            onClick={() => {
-                              setSelectedSession(session);
-                              setIsDecisionModalOpen(true);
-                              setDecision('');
-                              setNextDate('');
-                            }}
-                            className="flex items-center gap-2 text-indigo-600 font-black text-xs hover:underline bg-indigo-50/50 px-4 py-2 rounded-xl border border-indigo-100/50 print:hidden w-fit"
-                          >
-                            <ArrowRightLeft className="w-4 h-4" />
-                            إثبات القرار
-                          </button>
+                          <>
+                            <button
+                              onClick={() => {
+                                setSelectedSession(session);
+                                setIsDecisionModalOpen(true);
+                                setDecision('');
+                                setNextDate('');
+                              }}
+                              className="flex items-center gap-2 text-indigo-600 font-black text-xs hover:underline bg-indigo-50/50 px-4 py-2 rounded-xl border border-indigo-100/50 print:hidden w-fit"
+                            >
+                              <ArrowRightLeft className="w-4 h-4" />
+                              إثبات القرار
+                            </button>
+                            <div className="hidden print:block h-8 border-b border-dotted border-slate-300"></div>
+                          </>
                         )}
                         
                         <div className="flex items-center gap-3 mt-1 print:hidden">
@@ -435,17 +468,31 @@ export default function SessionRelay() {
                       </div>
                     </td>
                   </motion.tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="text-center py-20 bg-white rounded-3xl border-2 border-dashed border-slate-200">
-            <CalendarClock className="w-16 h-16 text-slate-200 mx-auto mb-4" />
-            <h3 className="text-xl font-black text-slate-400">لا توجد جلسات لهذا التاريخ</h3>
-            <p className="text-slate-300 font-medium">يرجى اختيار تاريخ آخر أو إضافة جلسات جديدة.</p>
-          </div>
-        )}
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={7} className="p-20 text-center text-slate-400 font-bold">
+                    لا توجد جلسات مسجلة لهذا التاريخ
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Print Footer */}
+        <div className="hidden print:block p-12 border-t border-slate-900 mt-12">
+           <div className="flex justify-between items-end">
+              <div className="text-center w-64">
+                 <p className="font-black text-lg mb-12 text-slate-900">توقيع المحامي الحاضر</p>
+                 <div className="border-b-2 border-slate-900 w-full"></div>
+              </div>
+              <div className="text-center w-64">
+                 <p className="font-black text-lg mb-12 text-slate-900">اعتماد الإدارة</p>
+                 <div className="border-b-2 border-slate-900 w-full"></div>
+              </div>
+           </div>
+        </div>
       </div>
 
       {/* Hidden Exportable Area - Completely free of Tailwind classes to avoid oklch error */}
@@ -498,7 +545,7 @@ export default function SessionRelay() {
                 <th style={{ padding: '12px', border: '1px solid #000000', fontSize: '14px', fontWeight: '900' }}>رقم القضية</th>
                 <th style={{ padding: '12px', border: '1px solid #000000', fontSize: '14px', fontWeight: '900' }}>الموكل</th>
                 <th style={{ padding: '12px', border: '1px solid #000000', fontSize: '14px', fontWeight: '900' }}>الخصم</th>
-                <th style={{ padding: '12px', border: '1px solid #000000', fontSize: '14px', fontWeight: '900' }}>القرار / الإجراء</th>
+                <th style={{ padding: '12px', border: '1px solid #000000', fontSize: '14px', fontWeight: '900' }}>القرار</th>
               </tr>
             </thead>
             <tbody>

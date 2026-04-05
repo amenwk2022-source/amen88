@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { Plus, Search, Filter, Briefcase, Scale, Gavel, Archive, MoreVertical, Trash2, Edit2, X, Check, ArrowLeftRight, CalendarPlus } from 'lucide-react';
+import { Plus, Search, Filter, Briefcase, Scale, Gavel, Archive, MoreVertical, Trash2, Edit2, X, Check, ArrowLeftRight, CalendarPlus, FileCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Case, CaseStatus, Client } from '../types';
+import { Case, CaseStatus, Client, Judgment } from '../types';
 import { cn } from '../lib/utils';
+import { addDays, format } from 'date-fns';
 
 const STATUS_MAP: Record<CaseStatus, { label: string; color: string; icon: any }> = {
   'pre-filing': { label: 'تحت الرفع', color: 'blue', icon: Briefcase },
@@ -21,8 +22,16 @@ export default function CaseManagement() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCase, setEditingCase] = useState<Case | null>(null);
   const [isSessionModalOpen, setIsSessionModalOpen] = useState(false);
+  const [isJudgmentModalOpen, setIsJudgmentModalOpen] = useState(false);
   const [selectedCaseForSession, setSelectedCaseForSession] = useState<Case | null>(null);
+  const [selectedCaseForJudgment, setSelectedCaseForJudgment] = useState<Case | null>(null);
   const [sessionDate, setSessionDate] = useState('');
+  const [judgmentData, setJudgmentData] = useState<Partial<Judgment>>({
+    date: new Date().toISOString().split('T')[0],
+    type: 'initial',
+    result: '',
+    notes: ''
+  });
   const [formData, setFormData] = useState<Partial<Case>>({
     clientId: '',
     caseNumber: '',
@@ -115,6 +124,38 @@ export default function CaseManagement() {
       setSelectedCaseForSession(null);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'sessions');
+    }
+  };
+
+  const handleAddJudgment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCaseForJudgment || !judgmentData.date || !judgmentData.result) return;
+
+    try {
+      const appealDeadline = addDays(new Date(judgmentData.date), 30).toISOString();
+      
+      await addDoc(collection(db, 'judgments'), {
+        caseId: selectedCaseForJudgment.id,
+        date: judgmentData.date,
+        type: judgmentData.type,
+        result: judgmentData.result,
+        appealDeadline,
+        isAppealed: false,
+        notes: judgmentData.notes,
+        createdAt: new Date().toISOString()
+      });
+
+      // Update case status to archive
+      await updateDoc(doc(db, 'cases', selectedCaseForJudgment.id), {
+        status: 'archive',
+        updatedAt: new Date().toISOString()
+      });
+
+      setIsJudgmentModalOpen(false);
+      setSelectedCaseForJudgment(null);
+      setJudgmentData({ date: new Date().toISOString().split('T')[0], type: 'initial', result: '', notes: '' });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'judgments');
     }
   };
 
@@ -246,7 +287,10 @@ export default function CaseManagement() {
                   <Trash2 className="w-5 h-5" />
                 </button>
                 <button 
-                  onClick={() => handleMoveToJudgment(c.id)}
+                  onClick={() => {
+                    setSelectedCaseForJudgment(c);
+                    setIsJudgmentModalOpen(true);
+                  }}
                   className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-slate-800 transition-all shadow-lg shadow-slate-100"
                 >
                   <Gavel className="w-4 h-4" />
@@ -461,6 +505,88 @@ export default function CaseManagement() {
                   <button
                     type="button"
                     onClick={() => setIsSessionModalOpen(false)}
+                    className="px-8 bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl hover:bg-slate-200 transition-all"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Add Judgment Modal */}
+      <AnimatePresence>
+        {isJudgmentModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsJudgmentModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
+            >
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <h2 className="text-xl font-black text-slate-900">تسجيل منطوق الحكم</h2>
+                <button onClick={() => setIsJudgmentModalOpen(false)} className="p-2 hover:bg-white rounded-xl transition-all">
+                  <X className="w-5 h-5 text-slate-400" />
+                </button>
+              </div>
+              <form onSubmit={handleAddJudgment} className="p-8 space-y-6">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">تاريخ صدور الحكم</label>
+                    <input
+                      required
+                      type="date"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 transition-all"
+                      value={judgmentData.date}
+                      onChange={(e) => setJudgmentData({ ...judgmentData, date: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">درجة التقاضي</label>
+                    <select
+                      required
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 transition-all"
+                      value={judgmentData.type}
+                      onChange={(e) => setJudgmentData({ ...judgmentData, type: e.target.value as any })}
+                    >
+                      <option value="initial">ابتدائي</option>
+                      <option value="appeal">استئناف</option>
+                      <option value="cassation">تمييز</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">منطوق الحكم</label>
+                    <textarea
+                      required
+                      rows={3}
+                      placeholder="اكتب منطوق الحكم هنا..."
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 transition-all"
+                      value={judgmentData.result}
+                      onChange={(e) => setJudgmentData({ ...judgmentData, result: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="pt-4 flex gap-4">
+                  <button
+                    type="submit"
+                    className="flex-1 bg-indigo-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+                  >
+                    <FileCheck className="w-5 h-5" />
+                    حفظ وأرشفة
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsJudgmentModalOpen(false)}
                     className="px-8 bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl hover:bg-slate-200 transition-all"
                   >
                     إلغاء

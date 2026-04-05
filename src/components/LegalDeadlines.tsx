@@ -1,0 +1,207 @@
+import React, { useState, useEffect } from 'react';
+import { collection, onSnapshot, query, where, orderBy, addDoc, doc, updateDoc } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType } from '../firebase';
+import { Judgment, Case, AppNotification } from '../types';
+import { Gavel, Calendar, Clock, AlertTriangle, CheckCircle2, Bell, ExternalLink } from 'lucide-react';
+import { format, differenceInDays, parseISO, addDays } from 'date-fns';
+import { arSA } from 'date-fns/locale';
+import { motion, AnimatePresence } from 'motion/react';
+import { cn } from '../lib/utils';
+
+export default function LegalDeadlines() {
+  const [judgments, setJudgments] = useState<Judgment[]>([]);
+  const [cases, setCases] = useState<Case[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubJudgments = onSnapshot(collection(db, 'judgments'), (snapshot) => {
+      setJudgments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Judgment)));
+    });
+
+    const unsubCases = onSnapshot(collection(db, 'cases'), (snapshot) => {
+      setCases(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case)));
+    });
+
+    const unsubNotifications = onSnapshot(
+      query(collection(db, 'notifications'), orderBy('date', 'desc')), 
+      (snapshot) => {
+        setNotifications(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AppNotification)));
+        setLoading(false);
+      }
+    );
+
+    return () => {
+      unsubJudgments();
+      unsubCases();
+      unsubNotifications();
+    };
+  }, []);
+
+  // Logic to check for upcoming deadlines and create notifications
+  useEffect(() => {
+    if (loading) return;
+
+    const checkDeadlines = async () => {
+      for (const judgment of judgments) {
+        if (judgment.isAppealed) continue;
+
+        const deadline = parseISO(judgment.appealDeadline);
+        const daysLeft = differenceInDays(deadline, new Date());
+
+        // Only notify if deadline is within 7 days and not already notified
+        if (daysLeft <= 7 && daysLeft >= 0) {
+          const notificationExists = notifications.some(
+            n => n.type === 'deadline' && n.link?.includes(judgment.id)
+          );
+
+          if (!notificationExists) {
+            try {
+              await addDoc(collection(db, 'notifications'), {
+                title: 'اقتراب موعد الاستئناف',
+                message: `بقي ${daysLeft} أيام على انتهاء مدة الاستئناف للقضية رقم ${cases.find(c => c.id === judgment.caseId)?.caseNumber}`,
+                type: 'deadline',
+                date: new Date().toISOString(),
+                isRead: false,
+                link: `/cases?id=${judgment.caseId}`
+              });
+            } catch (err) {
+              console.error('Failed to create notification:', err);
+            }
+          }
+        }
+      }
+    };
+
+    checkDeadlines();
+  }, [judgments, notifications, loading, cases]);
+
+  const getJudgmentCase = (caseId: string) => cases.find(c => c.id === caseId);
+
+  return (
+    <div className="space-y-8 rtl pb-20" dir="rtl">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h1 className="text-3xl font-black text-slate-900 flex items-center gap-3">
+            <Gavel className="w-8 h-8 text-indigo-600" />
+            المواعيد القانونية والتنبيهات
+          </h1>
+          <p className="text-slate-500 font-bold mt-1">متابعة مدد الاستئناف والطعن والمواعيد الحرجة</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Deadlines List */}
+        <div className="lg:col-span-2 space-y-6">
+          <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+            <Clock className="w-5 h-5 text-indigo-600" />
+            مدد الاستئناف النشطة
+          </h2>
+          
+          <div className="grid gap-4">
+            {judgments.filter(j => !j.isAppealed).map((judgment) => {
+              const c = getJudgmentCase(judgment.caseId);
+              const daysLeft = differenceInDays(parseISO(judgment.appealDeadline), new Date());
+              const isCritical = daysLeft <= 5;
+
+              return (
+                <motion.div
+                  layout
+                  key={judgment.id}
+                  className={cn(
+                    "bg-white p-6 rounded-3xl border-2 transition-all",
+                    isCritical ? "border-red-100 bg-red-50/30" : "border-slate-100"
+                  )}
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className={cn(
+                          "px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider",
+                          judgment.type === 'initial' ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"
+                        )}>
+                          حكم {judgment.type === 'initial' ? 'ابتدائي' : 'استئناف'}
+                        </span>
+                        <h3 className="font-black text-slate-900">قضية رقم: {c?.caseNumber}</h3>
+                      </div>
+                      <p className="text-sm font-bold text-slate-500">{c?.court} - {c?.circuit}</p>
+                      <div className="flex items-center gap-4 mt-4">
+                        <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                          <Calendar className="w-4 h-4 text-slate-400" />
+                          تاريخ الحكم: {format(parseISO(judgment.date), 'yyyy/MM/dd')}
+                        </div>
+                        <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                          <AlertTriangle className={cn("w-4 h-4", isCritical ? "text-red-500" : "text-amber-500")} />
+                          آخر موعد: {format(parseISO(judgment.appealDeadline), 'yyyy/MM/dd')}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-left">
+                      <div className={cn(
+                        "w-20 h-20 rounded-2xl flex flex-col items-center justify-center border-2",
+                        isCritical ? "bg-red-600 border-red-700 text-white shadow-lg shadow-red-100" : "bg-white border-slate-100 text-slate-900"
+                      )}>
+                        <span className="text-2xl font-black">{daysLeft < 0 ? 0 : daysLeft}</span>
+                        <span className="text-[10px] font-bold uppercase">يوم متبقي</span>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+
+            {judgments.filter(j => !j.isAppealed).length === 0 && (
+              <div className="text-center py-12 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
+                <CheckCircle2 className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                <p className="text-slate-400 font-bold">لا توجد مدد استئناف نشطة حالياً</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Notifications Sidebar */}
+        <div className="space-y-6">
+          <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+            <Bell className="w-5 h-5 text-indigo-600" />
+            آخر التنبيهات
+          </h2>
+
+          <div className="space-y-4">
+            {notifications.map((notif) => (
+              <div 
+                key={notif.id}
+                className={cn(
+                  "p-4 rounded-2xl border transition-all",
+                  notif.isRead ? "bg-white border-slate-100 opacity-60" : "bg-indigo-50/50 border-indigo-100 shadow-sm"
+                )}
+              >
+                <div className="flex gap-3">
+                  <div className={cn(
+                    "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
+                    notif.type === 'deadline' ? "bg-red-100 text-red-600" : "bg-indigo-100 text-indigo-600"
+                  )}>
+                    <Bell className="w-5 h-5" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-black text-slate-900">{notif.title}</h4>
+                    <p className="text-xs font-bold text-slate-600 leading-relaxed">{notif.message}</p>
+                    <p className="text-[10px] text-slate-400 font-bold mt-2">
+                      {format(parseISO(notif.date), 'yyyy/MM/dd HH:mm')}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {notifications.length === 0 && (
+              <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                <p className="text-slate-400 text-sm font-bold">لا توجد تنبيهات جديدة</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

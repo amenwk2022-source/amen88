@@ -17,6 +17,7 @@ export default function ProcedureManagement({ user }: ProcedureProps) {
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [autoNumberSearch, setAutoNumberSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProcedure, setEditingProcedure] = useState<Procedure | null>(null);
   const [formData, setFormData] = useState<Partial<Procedure>>({
@@ -45,6 +46,22 @@ export default function ProcedureManagement({ user }: ProcedureProps) {
       casesUnsub();
     };
   }, []);
+
+  const handleAutoNumberSearch = () => {
+    const foundCase = cases.find(c => c.autoNumber === autoNumberSearch);
+    if (foundCase) {
+      setFormData({
+        caseId: foundCase.id,
+        type: 'إجراء تنفيذ',
+        notes: `بدء إجراءات التنفيذ للرقم الآلي: ${foundCase.autoNumber}`,
+        date: new Date().toISOString().split('T')[0]
+      });
+      setIsModalOpen(true);
+      setAutoNumberSearch('');
+    } else {
+      alert('لم يتم العثور على قضية بهذا الرقم الآلي');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,7 +93,8 @@ export default function ProcedureManagement({ user }: ProcedureProps) {
     return (
       p.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c?.caseNumber?.includes(searchTerm) ||
-      c?.clientName?.includes(searchTerm)
+      c?.clientName?.includes(searchTerm) ||
+      c?.autoNumber?.includes(searchTerm)
     );
   });
 
@@ -87,17 +105,34 @@ export default function ProcedureManagement({ user }: ProcedureProps) {
           <h1 className="text-2xl font-black text-slate-900 mb-1">إدارة الإجراءات الإدارية</h1>
           <p className="text-slate-500 font-medium">توثيق ومتابعة كافة الإجراءات المتخذة في القضايا.</p>
         </div>
-        <button
-          onClick={() => {
-            setEditingProcedure(null);
-            setFormData({ caseId: '', type: '', notes: '', date: new Date().toISOString().split('T')[0] });
-            setIsModalOpen(true);
-          }}
-          className="flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"
-        >
-          <Plus className="w-5 h-5" />
-          إضافة إجراء جديد
-        </button>
+        <div className="flex gap-2">
+          <div className="relative flex items-center">
+            <input
+              type="text"
+              placeholder="بحث بالرقم الآلي للتنفيذ..."
+              className="bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-indigo-600 outline-none w-64 shadow-sm"
+              value={autoNumberSearch}
+              onChange={(e) => setAutoNumberSearch(e.target.value)}
+            />
+            <button 
+              onClick={handleAutoNumberSearch}
+              className="absolute left-2 bg-indigo-600 text-white p-1.5 rounded-lg hover:bg-indigo-700 transition-all"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          </div>
+          <button
+            onClick={() => {
+              setEditingProcedure(null);
+              setFormData({ caseId: '', type: '', notes: '', date: new Date().toISOString().split('T')[0] });
+              setIsModalOpen(true);
+            }}
+            className="flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"
+          >
+            <Plus className="w-5 h-5" />
+            إضافة إجراء جديد
+          </button>
+        </div>
       </div>
 
       {/* Search */}
