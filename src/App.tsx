@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { onAuthStateChanged, auth, db } from './firebase';
+import { onAuthStateChanged, auth, db, handleFirestoreError, OperationType } from './firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { UserProfile } from './types';
 import Layout from './components/Layout';
@@ -11,6 +11,8 @@ import CaseManagement from './components/CaseManagement';
 import SessionRelay from './components/SessionRelay';
 import FinanceManagement from './components/Finance';
 import EDMS from './components/EDMS';
+import Procedures from './components/Procedures';
+import Reports from './components/Reports';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 export default function App() {
@@ -19,16 +21,21 @@ export default function App() {
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        const userRef = doc(db, 'users', firebaseUser.uid);
-        const userSnap = await getDoc(userRef);
-        if (userSnap.exists()) {
-          setUser({ uid: firebaseUser.uid, ...userSnap.data() } as UserProfile);
+      try {
+        if (firebaseUser) {
+          const userRef = doc(db, 'users', firebaseUser.uid);
+          const userSnap = await getDoc(userRef);
+          if (userSnap.exists()) {
+            setUser({ uid: firebaseUser.uid, ...userSnap.data() } as UserProfile);
+          }
+        } else {
+          setUser(null);
         }
-      } else {
-        setUser(null);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.GET, 'users');
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return unsub;
@@ -58,8 +65,10 @@ export default function App() {
             <Route path="/clients" element={<ClientManagement />} />
             <Route path="/cases" element={<CaseManagement />} />
             <Route path="/sessions" element={<SessionRelay />} />
-            <Route path="/finance" element={<FinanceManagement />} />
+            <Route path="/procedures" element={<Procedures user={user} />} />
             <Route path="/documents" element={<EDMS />} />
+            <Route path="/finance" element={<FinanceManagement />} />
+            <Route path="/reports" element={<Reports />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Layout>

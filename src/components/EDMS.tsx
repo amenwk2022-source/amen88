@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, orderBy, addDoc, doc, deleteDoc } from 'firebase/firestore';
-import { db } from '../firebase';
-import { FileText, Upload, Search, Filter, MoreVertical, Trash2, Eye, Download, X, Plus, Check, File, FileImage } from 'lucide-react';
+import { db, handleFirestoreError, OperationType } from '../firebase';
+import { FileText, Upload, Search, Filter, MoreVertical, Trash2, Eye, Download, X, Plus, Check, File, FileImage, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Document, Case } from '../types';
 import { cn } from '../lib/utils';
@@ -25,6 +25,9 @@ export default function EDMS() {
     const unsub = onSnapshot(query(collection(db, 'documents'), orderBy('uploadDate', 'desc')), (snapshot) => {
       setDocuments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Document)));
       setLoading(false);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'documents');
+      setLoading(false);
     });
 
     const casesUnsub = onSnapshot(collection(db, 'cases'), (snapshot) => {
@@ -47,7 +50,15 @@ export default function EDMS() {
       setIsModalOpen(false);
       setFormData({ caseId: '', title: '', fileUrl: '' });
     } catch (error) {
-      console.error('Error uploading document:', error);
+      handleFirestoreError(error, OperationType.WRITE, 'documents');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'documents', id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'documents');
     }
   };
 
@@ -127,7 +138,10 @@ export default function EDMS() {
                     <button className="p-1.5 hover:bg-slate-100 text-slate-400 rounded-lg transition-all">
                       <Download className="w-4 h-4" />
                     </button>
-                    <button className="p-1.5 hover:bg-red-50 text-red-400 rounded-lg transition-all">
+                    <button 
+                      onClick={() => handleDelete(docItem.id)}
+                      className="p-1.5 hover:bg-red-50 text-red-400 rounded-lg transition-all"
+                    >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>

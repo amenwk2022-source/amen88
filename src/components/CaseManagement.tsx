@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, where } from 'firebase/firestore';
-import { db } from '../firebase';
-import { Plus, Search, Filter, Briefcase, Scale, Gavel, Archive, MoreVertical, Trash2, Edit2, X, Check, ArrowLeftRight } from 'lucide-react';
+import { db, handleFirestoreError, OperationType } from '../firebase';
+import { Plus, Search, Filter, Briefcase, Scale, Gavel, Archive, MoreVertical, Trash2, Edit2, X, Check, ArrowLeftRight, CalendarPlus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Case, CaseStatus, Client } from '../types';
 import { cn } from '../lib/utils';
@@ -20,6 +20,9 @@ export default function CaseManagement() {
   const [activeTab, setActiveTab] = useState<CaseStatus | 'all'>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCase, setEditingCase] = useState<Case | null>(null);
+  const [isSessionModalOpen, setIsSessionModalOpen] = useState(false);
+  const [selectedCaseForSession, setSelectedCaseForSession] = useState<Case | null>(null);
+  const [sessionDate, setSessionDate] = useState('');
   const [formData, setFormData] = useState<Partial<Case>>({
     clientId: '',
     caseNumber: '',
@@ -72,6 +75,46 @@ export default function CaseManagement() {
       setFormData({ clientId: '', status: 'pre-filing' });
     } catch (error) {
       console.error('Error saving case:', error);
+    }
+  };
+
+  const handleMoveToJudgment = async (id: string) => {
+    try {
+      await updateDoc(doc(db, 'cases', id), {
+        status: 'archive',
+        updatedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'cases');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'cases', id));
+    } catch (error) {
+      console.error('Error deleting case:', error);
+    }
+  };
+
+  const handleAddSession = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCaseForSession || !sessionDate) return;
+
+    try {
+      await addDoc(collection(db, 'sessions'), {
+        caseId: selectedCaseForSession.id,
+        date: sessionDate,
+        decision: '',
+        nextDate: '',
+        lawyerId: selectedCaseForSession.lawyerId || '',
+        createdAt: new Date().toISOString()
+      });
+      setIsSessionModalOpen(false);
+      setSessionDate('');
+      setSelectedCaseForSession(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'sessions');
     }
   };
 
@@ -186,12 +229,28 @@ export default function CaseManagement() {
                 >
                   <Edit2 className="w-5 h-5" />
                 </button>
-                <button className="p-3 bg-slate-50 text-slate-600 rounded-xl hover:bg-red-50 hover:text-red-600 transition-all border border-slate-100">
+                <button 
+                  onClick={() => {
+                    setSelectedCaseForSession(c);
+                    setIsSessionModalOpen(true);
+                  }}
+                  className="p-3 bg-slate-50 text-indigo-600 rounded-xl hover:bg-indigo-100 transition-all border border-slate-100"
+                  title="إضافة جلسة"
+                >
+                  <CalendarPlus className="w-5 h-5" />
+                </button>
+                <button 
+                  onClick={() => handleDelete(c.id)}
+                  className="p-3 bg-slate-50 text-slate-600 rounded-xl hover:bg-red-50 hover:text-red-600 transition-all border border-slate-100"
+                >
                   <Trash2 className="w-5 h-5" />
                 </button>
-                <button className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-slate-800 transition-all shadow-lg shadow-slate-100">
-                  <ArrowLeftRight className="w-4 h-4" />
-                  ترحيل الحالة
+                <button 
+                  onClick={() => handleMoveToJudgment(c.id)}
+                  className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-slate-800 transition-all shadow-lg shadow-slate-100"
+                >
+                  <Gavel className="w-4 h-4" />
+                  تحويل لحكم
                 </button>
               </div>
             </motion.div>
@@ -346,6 +405,62 @@ export default function CaseManagement() {
                   <button
                     type="button"
                     onClick={() => setIsModalOpen(false)}
+                    className="px-8 bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl hover:bg-slate-200 transition-all"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Add Session Modal */}
+      <AnimatePresence>
+        {isSessionModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsSessionModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
+            >
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <h2 className="text-xl font-black text-slate-900">إضافة جلسة جديدة</h2>
+                <button onClick={() => setIsSessionModalOpen(false)} className="p-2 hover:bg-white rounded-xl transition-all">
+                  <X className="w-5 h-5 text-slate-400" />
+                </button>
+              </div>
+              <form onSubmit={handleAddSession} className="p-8 space-y-6">
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-700">تاريخ الجلسة</label>
+                  <input
+                    required
+                    type="date"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                    value={sessionDate}
+                    onChange={(e) => setSessionDate(e.target.value)}
+                  />
+                </div>
+                <div className="pt-4 flex gap-4">
+                  <button
+                    type="submit"
+                    className="flex-1 bg-indigo-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Check className="w-5 h-5" />
+                    إضافة الجلسة
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsSessionModalOpen(false)}
                     className="px-8 bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl hover:bg-slate-200 transition-all"
                   >
                     إلغاء

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, limit, orderBy, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, handleFirestoreError, OperationType } from '../firebase';
 import {
   Briefcase,
   Users,
@@ -43,18 +43,37 @@ export default function Dashboard() {
   });
   const [upcomingSessions, setUpcomingSessions] = useState<Session[]>([]);
   const [omittedSessions, setOmittedSessions] = useState<Session[]>([]);
+  const [deadlineAlerts, setDeadlineAlerts] = useState<{ type: string; message: string; caseId: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     // Real-time listener for cases
     const casesUnsub = onSnapshot(collection(db, 'cases'), (snapshot) => {
-      const cases = snapshot.docs.map(doc => doc.data() as Case);
+      const cases = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case));
       setStats({
         totalCases: cases.length,
         activeCases: cases.filter(c => c.status === 'active').length,
         wonCases: cases.filter(c => c.status === 'archive').length, // Assuming archive = finished
         totalClients: new Set(cases.map(c => c.clientId)).size,
       });
+
+      // Calculate deadline alerts
+      const alerts: { type: string; message: string; caseId: string }[] = [];
+      const now = new Date();
+      cases.forEach(c => {
+        if (c.status === 'active') {
+          const created = new Date(c.createdAt);
+          const diffDays = Math.floor((now.getTime() - created.getTime()) / (1000 * 3600 * 24));
+          if (c.caseType === 'إيجارات' && diffDays >= 10 && diffDays <= 15) {
+            alerts.push({ type: 'rent', message: `تنبيه إيجارات: اقتراب موعد الاستئناف (باقي ${15 - diffDays} أيام)`, caseId: c.id });
+          } else if (diffDays >= 25 && diffDays <= 30) {
+            alerts.push({ type: 'appeal', message: `تنبيه استئناف: اقتراب موعد الاستئناف (باقي ${30 - diffDays} أيام)`, caseId: c.id });
+          }
+        }
+      });
+      setDeadlineAlerts(alerts);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'cases');
     });
 
     // Real-time listener for upcoming sessions
@@ -67,6 +86,8 @@ export default function Dashboard() {
     );
     const sessionsUnsub = onSnapshot(sessionsQuery, (snapshot) => {
       setUpcomingSessions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Session)));
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'sessions');
     });
 
     // Anti-Omission: Sessions with date < today and no decision
@@ -78,6 +99,9 @@ export default function Dashboard() {
     );
     const omittedUnsub = onSnapshot(omittedQuery, (snapshot) => {
       setOmittedSessions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Session)));
+      setLoading(false);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'sessions');
       setLoading(false);
     });
 
@@ -140,6 +164,29 @@ export default function Dashboard() {
         </motion.div>
       )}
 
+      {/* Deadline Alerts */}
+      {deadlineAlerts.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {deadlineAlerts.map((alert, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: i * 0.1 }}
+              className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex items-center gap-4 shadow-sm"
+            >
+              <div className="p-2 bg-amber-100 rounded-lg">
+                <AlertCircle className="w-5 h-5 text-amber-600" />
+              </div>
+              <div className="flex-1">
+                <p className="text-amber-900 text-sm font-bold">{alert.message}</p>
+                <p className="text-amber-700 text-[10px] font-medium">قضية رقم: {alert.caseId.slice(0, 8)}</p>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      )}
+
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
@@ -184,8 +231,8 @@ export default function Dashboard() {
               <option>2023</option>
             </select>
           </div>
-          <div className="h-80 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-80 w-full min-h-[320px]">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={320}>
               <AreaChart data={chartData}>
                 <defs>
                   <linearGradient id="colorCases" x1="0" y1="0" x2="0" y2="1">
@@ -212,8 +259,8 @@ export default function Dashboard() {
             <Scale className="w-5 h-5 text-indigo-600" />
             توزيع حالات القضايا
           </h3>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-64 w-full min-h-[256px]">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={256}>
               <PieChart>
                 <Pie
                   data={pieData}

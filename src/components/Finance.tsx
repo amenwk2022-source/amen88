@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, orderBy, doc, updateDoc, addDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, handleFirestoreError, OperationType } from '../firebase';
 import { DollarSign, TrendingUp, TrendingDown, CreditCard, PieChart, ArrowUpRight, ArrowDownRight, Plus, Search, Filter, Download, FileText, Check, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Finance, Case } from '../types';
@@ -25,10 +25,15 @@ export default function FinanceManagement() {
     const unsub = onSnapshot(collection(db, 'finance'), (snapshot) => {
       setFinances(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Finance)));
       setLoading(false);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'finance');
+      setLoading(false);
     });
 
     const casesUnsub = onSnapshot(collection(db, 'cases'), (snapshot) => {
       setCases(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case)));
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'cases');
     });
 
     return () => {
@@ -52,7 +57,7 @@ export default function FinanceManagement() {
       setEditingFinance(null);
       setFormData({ caseId: '', totalFees: 0, receivedAmount: 0, expenses: 0, sundries: 0 });
     } catch (error) {
-      console.error('Error saving finance:', error);
+      handleFirestoreError(error, OperationType.WRITE, 'finance');
     }
   };
 
@@ -124,8 +129,8 @@ export default function FinanceManagement() {
             <TrendingUp className="w-5 h-5 text-indigo-600" />
             تحليل التدفق المالي (آخر 6 قضايا)
           </h3>
-          <div className="h-80 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-80 w-full min-h-[320px]">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={320}>
               <BarChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12, fontWeight: 600 }} dy={10} />

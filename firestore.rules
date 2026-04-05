@@ -10,16 +10,16 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() &&
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+        ((exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
           (request.auth.token.email == "amenwk2022@gmail.com" && request.auth.token.email_verified == true));
     }
 
     function isLawyer() {
-      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'lawyer';
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'lawyer';
     }
 
     function isStaff() {
-      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'staff';
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'staff';
     }
 
     function isOwner(userId) {
@@ -48,6 +48,14 @@ service cloud.firestore {
       return data.clientId is string && data.status in ['pre-filing', 'active', 'execution', 'archive'];
     }
 
+    function isValidProcedure(data) {
+      return data.caseId is string && data.type is string && data.type.size() > 0 && data.type.size() < 200;
+    }
+
+    function isValidSession(data) {
+      return data.caseId is string && data.date is string && data.date.size() > 0;
+    }
+
     // ===============================================================
     // Match Rules
     // ===============================================================
@@ -69,12 +77,16 @@ service cloud.firestore {
 
     match /sessions/{sessionId} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin() || isLawyer() || isStaff();
+      allow create: if isAuthenticated() && isValidSession(request.resource.data) && (isAdmin() || isLawyer() || isStaff());
+      allow update: if isAuthenticated() && isValidSession(request.resource.data) && (isAdmin() || isLawyer() || isStaff());
+      allow delete: if isAdmin();
     }
 
     match /procedures/{procedureId} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin() || isLawyer() || isStaff();
+      allow create: if isAuthenticated() && isValidProcedure(request.resource.data) && (isAdmin() || isLawyer() || isStaff());
+      allow update: if isAuthenticated() && isValidProcedure(request.resource.data) && (isAdmin() || isLawyer() || isStaff());
+      allow delete: if isAdmin();
     }
 
     match /finance/{financeId} {

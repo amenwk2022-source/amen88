@@ -1,28 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { auth, db } from '../firebase';
+import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { motion } from 'motion/react';
-import { Scale, ShieldCheck, UserCheck } from 'lucide-react';
+import { Scale, ShieldCheck, UserCheck, AlertCircle } from 'lucide-react';
 
 export default function Auth() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleLogin = async () => {
-    setLoading(true);
-    setError(null);
+  const createProfile = async (user: any) => {
+    const userRef = doc(db, 'users', user.uid);
     try {
-      const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-
-      // Check if user profile exists, if not create one with default role 'staff'
-      const userRef = doc(db, 'users', user.uid);
       const userSnap = await getDoc(userRef);
-
       if (!userSnap.exists()) {
-        // Default admin for the specified email
         const role = user.email === 'amenwk2022@gmail.com' ? 'admin' : 'staff';
         await setDoc(userRef, {
           uid: user.uid,
@@ -33,12 +24,32 @@ export default function Auth() {
         });
       }
     } catch (err: any) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}`);
+    }
+  };
+
+  const handleLogin = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      await createProfile(result.user);
+      // App.tsx will pick up the change via onAuthStateChanged
+    } catch (err: any) {
       console.error('Login error:', err);
-      setError('فشل تسجيل الدخول. يرجى المحاولة مرة أخرى.');
+      setError('فشل تسجيل الدخول. يرجى المحاولة مرة أخرى أو التأكد من السماح بالنوافذ المنبثقة.');
     } finally {
       setLoading(false);
     }
   };
+
+  // Check if user is already logged in but profile is missing
+  useEffect(() => {
+    if (auth.currentUser) {
+      createProfile(auth.currentUser);
+    }
+  }, []);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4 rtl" dir="rtl">
@@ -57,7 +68,8 @@ export default function Auth() {
         <p className="text-slate-500 mb-8 font-medium">نظام إدارة المكاتب القانونية - الجيل القادم</p>
 
         {error && (
-          <div className="mb-6 p-4 bg-red-50 text-red-600 rounded-xl border border-red-100 text-sm">
+          <div className="mb-6 p-4 bg-red-50 text-red-600 rounded-xl border border-red-100 text-sm flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 shrink-0" />
             {error}
           </div>
         )}
@@ -90,6 +102,10 @@ export default function Auth() {
             <Scale className="w-5 h-5 text-indigo-600" />
             <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">إدارة ذكية</span>
           </div>
+        </div>
+
+        <div className="mt-8 p-4 bg-slate-50 rounded-xl border border-slate-100 text-[10px] text-slate-400 font-medium">
+          إذا واجهت مشكلة في تسجيل الدخول، يرجى فتح التطبيق في نافذة جديدة.
         </div>
       </motion.div>
     </div>

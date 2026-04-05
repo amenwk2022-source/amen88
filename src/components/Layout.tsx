@@ -15,7 +15,9 @@ import {
   X,
   Bell,
   Search,
-  Scale
+  Scale,
+  ClipboardList,
+  TrendingUp
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -31,8 +33,10 @@ const navItems = [
   { path: '/clients', label: 'الموكلين', icon: Users },
   { path: '/cases', label: 'القضايا', icon: Briefcase },
   { path: '/sessions', label: 'رول الجلسات', icon: CalendarClock },
+  { path: '/procedures', label: 'الإجراءات', icon: ClipboardList },
   { path: '/documents', label: 'الأرشيف الضوئي', icon: FileText },
   { path: '/finance', label: 'المالية', icon: DollarSign },
+  { path: '/reports', label: 'التقارير', icon: TrendingUp },
 ];
 
 export default function Layout({ children, user }: LayoutProps) {

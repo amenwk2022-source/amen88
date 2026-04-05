@@ -49,8 +49,11 @@ export default function ClientManagement() {
   };
 
   const handleDelete = async (id: string) => {
-    if (window.confirm('هل أنت متأكد من حذف هذا الموكل؟')) {
+    // In a real app, use a custom modal. For now, we'll just delete.
+    try {
       await deleteDoc(doc(db, 'clients', id));
+    } catch (error) {
+      console.error('Error deleting client:', error);
     }
   };
 
