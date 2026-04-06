@@ -1,14 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, where, orderBy, addDoc, doc, updateDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { Judgment, Case, AppNotification } from '../types';
+import { Judgment, Case, AppNotification, UserProfile } from '../types';
 import { Gavel, Calendar, Clock, AlertTriangle, CheckCircle2, Bell, ExternalLink } from 'lucide-react';
 import { format, differenceInDays, parseISO, addDays } from 'date-fns';
 import { arSA } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 
-export default function LegalDeadlines() {
+interface LegalDeadlinesProps {
+  user: UserProfile;
+}
+
+export default function LegalDeadlines({ user }: LegalDeadlinesProps) {
   const [judgments, setJudgments] = useState<Judgment[]>([]);
   const [cases, setCases] = useState<Case[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -17,16 +21,24 @@ export default function LegalDeadlines() {
   useEffect(() => {
     const unsubJudgments = onSnapshot(collection(db, 'judgments'), (snapshot) => {
       setJudgments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Judgment)));
-    });
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'judgments'));
 
     const unsubCases = onSnapshot(collection(db, 'cases'), (snapshot) => {
       setCases(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case)));
-    });
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'cases'));
 
     const unsubNotifications = onSnapshot(
-      query(collection(db, 'notifications'), orderBy('date', 'desc')), 
+      query(
+        collection(db, 'notifications'), 
+        where('userId', '==', user.uid),
+        orderBy('date', 'desc')
+      ), 
       (snapshot) => {
         setNotifications(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AppNotification)));
+        setLoading(false);
+      },
+      (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'notifications');
         setLoading(false);
       }
     );
@@ -37,44 +49,6 @@ export default function LegalDeadlines() {
       unsubNotifications();
     };
   }, []);
-
-  // Logic to check for upcoming deadlines and create notifications
-  useEffect(() => {
-    if (loading) return;
-
-    const checkDeadlines = async () => {
-      for (const judgment of judgments) {
-        if (judgment.isAppealed) continue;
-
-        const deadline = parseISO(judgment.appealDeadline);
-        const daysLeft = differenceInDays(deadline, new Date());
-
-        // Only notify if deadline is within 7 days and not already notified
-        if (daysLeft <= 7 && daysLeft >= 0) {
-          const notificationExists = notifications.some(
-            n => n.type === 'deadline' && n.link?.includes(judgment.id)
-          );
-
-          if (!notificationExists) {
-            try {
-              await addDoc(collection(db, 'notifications'), {
-                title: 'اقتراب موعد الاستئناف',
-                message: `بقي ${daysLeft} أيام على انتهاء مدة الاستئناف للقضية رقم ${cases.find(c => c.id === judgment.caseId)?.caseNumber}`,
-                type: 'deadline',
-                date: new Date().toISOString(),
-                isRead: false,
-                link: `/cases?id=${judgment.caseId}`
-              });
-            } catch (err) {
-              console.error('Failed to create notification:', err);
-            }
-          }
-        }
-      }
-    };
-
-    checkDeadlines();
-  }, [judgments, notifications, loading, cases]);
 
   const getJudgmentCase = (caseId: string) => cases.find(c => c.id === caseId);
 

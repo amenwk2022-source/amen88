@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { Plus, Search, Filter, Briefcase, Scale, Gavel, Archive, MoreVertical, Trash2, Edit2, X, Check, ArrowLeftRight, CalendarPlus, FileCheck } from 'lucide-react';
+import { Plus, Search, Filter, Briefcase, Scale, Gavel, Archive, MoreVertical, Trash2, Edit2, X, Check, ArrowLeftRight, CalendarPlus, FileCheck, DollarSign } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Case, CaseStatus, Client, Judgment } from '../types';
 import { cn } from '../lib/utils';
@@ -15,17 +16,52 @@ const STATUS_MAP: Record<CaseStatus, { label: string; color: string; icon: any }
 };
 
 export default function CaseManagement() {
+  const [searchParams] = useSearchParams();
+  const highlightedId = searchParams.get('id');
   const [cases, setCases] = useState<Case[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<CaseStatus | 'all'>('all');
+  const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCase, setEditingCase] = useState<Case | null>(null);
   const [isSessionModalOpen, setIsSessionModalOpen] = useState(false);
   const [isJudgmentModalOpen, setIsJudgmentModalOpen] = useState(false);
   const [selectedCaseForSession, setSelectedCaseForSession] = useState<Case | null>(null);
   const [selectedCaseForJudgment, setSelectedCaseForJudgment] = useState<Case | null>(null);
+  const [selectedCaseDetails, setSelectedCaseDetails] = useState<Case | null>(null);
+  const [caseSessions, setCaseSessions] = useState<any[]>([]);
+  const [caseProcedures, setCaseProcedures] = useState<any[]>([]);
+  const [caseDocuments, setCaseDocuments] = useState<any[]>([]);
+  const [caseFinance, setCaseFinance] = useState<any | null>(null);
   const [sessionDate, setSessionDate] = useState('');
+  const caseRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  useEffect(() => {
+    if (selectedCaseDetails) {
+      const sessUnsub = onSnapshot(query(collection(db, 'sessions'), where('caseId', '==', selectedCaseDetails.id), orderBy('date', 'desc')), (snap) => {
+        setCaseSessions(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      });
+      const procUnsub = onSnapshot(query(collection(db, 'procedures'), where('caseId', '==', selectedCaseDetails.id), orderBy('date', 'desc')), (snap) => {
+        setCaseProcedures(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      });
+      const docUnsub = onSnapshot(query(collection(db, 'documents'), where('caseId', '==', selectedCaseDetails.id), orderBy('uploadDate', 'desc')), (snap) => {
+        setCaseDocuments(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      });
+      const finUnsub = onSnapshot(query(collection(db, 'finance'), where('caseId', '==', selectedCaseDetails.id)), (snap) => {
+        if (!snap.empty) setCaseFinance({ id: snap.docs[0].id, ...snap.docs[0].data() });
+        else setCaseFinance(null);
+      });
+
+      return () => {
+        sessUnsub();
+        procUnsub();
+        docUnsub();
+        finUnsub();
+      };
+    }
+  }, [selectedCaseDetails]);
+
   const [judgmentData, setJudgmentData] = useState<Partial<Judgment>>({
     date: new Date().toISOString().split('T')[0],
     type: 'initial',
@@ -60,6 +96,13 @@ export default function CaseManagement() {
       clientsUnsub();
     };
   }, []);
+
+  useEffect(() => {
+    if (highlightedId && caseRefs.current[highlightedId]) {
+      caseRefs.current[highlightedId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setActiveTab('all');
+    }
+  }, [highlightedId, loading]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,6 +142,7 @@ export default function CaseManagement() {
   };
 
   const handleDelete = async (id: string) => {
+    if (!window.confirm('هل أنت متأكد من حذف هذه القضية؟')) return;
     try {
       await deleteDoc(doc(db, 'cases', id));
     } catch (error) {
@@ -159,7 +203,15 @@ export default function CaseManagement() {
     }
   };
 
-  const filteredCases = activeTab === 'all' ? cases : cases.filter(c => c.status === activeTab);
+  const filteredCases = cases.filter(c => {
+    const matchesTab = activeTab === 'all' || c.status === activeTab;
+    const matchesSearch = 
+      c.caseNumber?.includes(searchTerm) || 
+      c.clientName?.includes(searchTerm) || 
+      c.autoNumber?.includes(searchTerm) ||
+      c.opponent?.includes(searchTerm);
+    return matchesTab && matchesSearch;
+  });
 
   return (
     <div className="space-y-6 rtl" dir="rtl">
@@ -181,37 +233,49 @@ export default function CaseManagement() {
         </button>
       </div>
 
-      {/* Tabs */}
-      <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap gap-2">
-        <button
-          onClick={() => setActiveTab('all')}
-          className={cn(
-            "px-6 py-2 rounded-xl text-sm font-bold transition-all",
-            activeTab === 'all' ? "bg-slate-900 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"
-          )}
-        >
-          الكل
-        </button>
-        {(Object.keys(STATUS_MAP) as CaseStatus[]).map((status) => {
-          const config = STATUS_MAP[status];
-          const Icon = config.icon;
-          const isActive = activeTab === status;
-          return (
-            <button
-              key={status}
-              onClick={() => setActiveTab(status)}
-              className={cn(
-                "flex items-center gap-2 px-6 py-2 rounded-xl text-sm font-bold transition-all",
-                isActive
-                  ? `bg-${config.color}-600 text-white shadow-md`
-                  : `text-slate-500 hover:bg-${config.color}-50 hover:text-${config.color}-600`
-              )}
-            >
-              <Icon className="w-4 h-4" />
-              {config.label}
-            </button>
-          );
-        })}
+      {/* Tabs & Local Search */}
+      <div className="flex flex-col lg:flex-row gap-4">
+        <div className="flex-1 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap gap-2">
+          <button
+            onClick={() => setActiveTab('all')}
+            className={cn(
+              "px-6 py-2 rounded-xl text-sm font-bold transition-all",
+              activeTab === 'all' ? "bg-slate-900 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"
+            )}
+          >
+            الكل
+          </button>
+          {(Object.keys(STATUS_MAP) as CaseStatus[]).map((status) => {
+            const config = STATUS_MAP[status];
+            const Icon = config.icon;
+            const isActive = activeTab === status;
+            return (
+              <button
+                key={status}
+                onClick={() => setActiveTab(status)}
+                className={cn(
+                  "flex items-center gap-2 px-6 py-2 rounded-xl text-sm font-bold transition-all",
+                  isActive
+                    ? `bg-${config.color}-600 text-white shadow-md`
+                    : `text-slate-500 hover:bg-${config.color}-50 hover:text-${config.color}-600`
+                )}
+              >
+                <Icon className="w-4 h-4" />
+                {config.label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-3 w-full lg:w-80">
+          <Search className="w-4 h-4 text-slate-400" />
+          <input
+            type="text"
+            placeholder="بحث سريع في النتائج..."
+            className="bg-transparent border-none focus:ring-0 text-sm w-full font-medium"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
       </div>
 
       {/* Cases List */}
@@ -219,13 +283,20 @@ export default function CaseManagement() {
         {filteredCases.map((c) => {
           const config = STATUS_MAP[c.status];
           const Icon = config.icon;
+          const isHighlighted = c.id === highlightedId;
+
           return (
             <motion.div
               layout
               key={c.id}
+              ref={(el) => { caseRefs.current[c.id] = el; }}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all group flex flex-col lg:flex-row lg:items-center gap-6"
+              onClick={() => setSelectedCaseDetails(c)}
+              className={cn(
+                "bg-white p-6 rounded-2xl border-2 shadow-sm hover:shadow-md transition-all group flex flex-col lg:flex-row lg:items-center gap-6 cursor-pointer",
+                isHighlighted ? "border-indigo-600 ring-4 ring-indigo-50" : "border-slate-200"
+              )}
             >
               <div className={cn("p-4 rounded-2xl border flex flex-col items-center justify-center min-w-[100px]", `bg-${config.color}-50 border-${config.color}-100 text-${config.color}-600`)}>
                 <Icon className="w-8 h-8 mb-2" />
@@ -259,7 +330,7 @@ export default function CaseManagement() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 lg:border-r lg:pr-6 lg:border-slate-100">
+              <div className="flex items-center gap-3 lg:border-r lg:pr-6 lg:border-slate-100" onClick={(e) => e.stopPropagation()}>
                 <button
                   onClick={() => {
                     setEditingCase(c);
@@ -593,6 +664,176 @@ export default function CaseManagement() {
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      {/* Case Details Modal */}
+      <AnimatePresence>
+        {selectedCaseDetails && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedCaseDetails(null)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative bg-white w-full max-w-5xl h-[90vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col"
+            >
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <div className="flex items-center gap-4">
+                  <div className={cn("p-3 rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-100")}>
+                    <Briefcase className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black text-slate-900">تفاصيل القضية: {selectedCaseDetails.caseNumber}</h2>
+                    <p className="text-sm text-slate-500 font-bold">{selectedCaseDetails.clientName}</p>
+                  </div>
+                </div>
+                <button onClick={() => setSelectedCaseDetails(null)} className="p-2 hover:bg-white rounded-xl transition-all">
+                  <X className="w-6 h-6 text-slate-400" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-8 space-y-8">
+                {/* Summary Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">المحكمة</p>
+                    <p className="text-sm font-bold text-slate-900">{selectedCaseDetails.court || '---'}</p>
+                  </div>
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">الدائرة</p>
+                    <p className="text-sm font-bold text-slate-900">{selectedCaseDetails.circuit || '---'}</p>
+                  </div>
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">الرقم الآلي</p>
+                    <p className="text-sm font-black text-indigo-600 tracking-widest">{selectedCaseDetails.autoNumber || '---'}</p>
+                  </div>
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">الخصم</p>
+                    <p className="text-sm font-bold text-slate-900">{selectedCaseDetails.opponent || '---'}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  {/* Sessions Section */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                      <CalendarPlus className="w-5 h-5 text-indigo-600" />
+                      الجلسات السابقة والقادمة
+                    </h3>
+                    <div className="space-y-3">
+                      {caseSessions.map((s, i) => (
+                        <div key={i} className="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-bold text-slate-900">{s.date}</p>
+                            <p className="text-xs text-slate-500 font-medium">{s.decision || 'بانتظار القرار'}</p>
+                          </div>
+                          {s.nextDate && (
+                            <div className="text-left">
+                              <p className="text-[10px] font-black text-indigo-600 uppercase">الجلسة القادمة</p>
+                              <p className="text-xs font-bold text-slate-900">{s.nextDate}</p>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      {caseSessions.length === 0 && <p className="text-center py-8 text-slate-400 font-bold text-sm">لا توجد جلسات مسجلة</p>}
+                    </div>
+                  </div>
+
+                  {/* Procedures Section */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                      <Scale className="w-5 h-5 text-indigo-600" />
+                      الإجراءات المتخذة
+                    </h3>
+                    <div className="space-y-3">
+                      {caseProcedures.map((p, i) => (
+                        <div key={i} className="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm flex items-center gap-3">
+                          <div className="p-2 bg-slate-50 rounded-lg">
+                            <Check className="w-4 h-4 text-emerald-600" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-slate-900">{p.type}</p>
+                            <p className="text-xs text-slate-500 font-medium">{p.date}</p>
+                          </div>
+                        </div>
+                      ))}
+                      {caseProcedures.length === 0 && <p className="text-center py-8 text-slate-400 font-bold text-sm">لا توجد إجراءات مسجلة</p>}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  {/* Documents Section */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                      <FileCheck className="w-5 h-5 text-indigo-600" />
+                      المستندات المرفقة
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      {caseDocuments.map((d, i) => (
+                        <a 
+                          key={i} 
+                          href={d.fileUrl} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="p-4 bg-slate-50 border border-slate-100 rounded-2xl hover:border-indigo-200 transition-all group"
+                        >
+                          <FileCheck className="w-8 h-8 text-indigo-600 mb-2 group-hover:scale-110 transition-transform" />
+                          <p className="text-xs font-bold text-slate-900 truncate">{d.title}</p>
+                          <p className="text-[10px] text-slate-400">{d.uploadDate}</p>
+                        </a>
+                      ))}
+                      {caseDocuments.length === 0 && <div className="col-span-2 text-center py-8 text-slate-400 font-bold text-sm">لا توجد مستندات</div>}
+                    </div>
+                  </div>
+
+                  {/* Finance Summary */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                      <DollarSign className="w-5 h-5 text-indigo-600" />
+                      الموقف المالي
+                    </h3>
+                    {caseFinance ? (
+                      <div className="bg-indigo-600 p-6 rounded-3xl text-white shadow-xl shadow-indigo-100">
+                        <div className="grid grid-cols-2 gap-6">
+                          <div>
+                            <p className="text-indigo-200 text-[10px] font-black uppercase mb-1">إجمالي الأتعاب</p>
+                            <p className="text-xl font-black">{caseFinance.totalFees.toLocaleString()} د.ك</p>
+                          </div>
+                          <div>
+                            <p className="text-indigo-200 text-[10px] font-black uppercase mb-1">المبلغ المستلم</p>
+                            <p className="text-xl font-black">{caseFinance.receivedAmount.toLocaleString()} د.ك</p>
+                          </div>
+                          <div className="col-span-2 pt-4 border-t border-indigo-500/50">
+                            <div className="flex items-center justify-between">
+                              <p className="text-indigo-200 text-[10px] font-black uppercase">المتبقي</p>
+                              <p className="text-2xl font-black">{(caseFinance.totalFees - caseFinance.receivedAmount).toLocaleString()} د.ك</p>
+                            </div>
+                            <div className="mt-2 h-2 bg-indigo-900/30 rounded-full overflow-hidden">
+                              <div 
+                                className="h-full bg-white rounded-full" 
+                                style={{ width: `${(caseFinance.receivedAmount / caseFinance.totalFees) * 100}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-8 bg-slate-50 border border-slate-100 rounded-3xl text-center">
+                        <p className="text-slate-400 font-bold text-sm">لا يوجد سجل مالي لهذه القضية</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
             </motion.div>
           </div>
         )}

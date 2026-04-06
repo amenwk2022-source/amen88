@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { auth } from '../firebase';
+import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { signOut } from 'firebase/auth';
+import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
 import {
   LayoutDashboard,
   Users,
@@ -17,11 +18,14 @@ import {
   Search,
   Scale,
   ClipboardList,
-  TrendingUp
+  TrendingUp,
+  CheckCircle2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import { UserProfile } from '../types';
+import { UserProfile, AppNotification, Case } from '../types';
+
+import NotificationCenter, { generateNotifications } from './NotificationCenter';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -29,27 +33,87 @@ interface LayoutProps {
 }
 
 const navItems = [
-  { path: '/', label: 'لوحة التحكم', icon: LayoutDashboard },
-  { path: '/clients', label: 'الموكلين', icon: Users },
-  { path: '/cases', label: 'القضايا', icon: Briefcase },
-  { path: '/sessions', label: 'رول الجلسات', icon: CalendarClock },
-  { path: '/expert-sessions', label: 'جلسات الخبراء', icon: Users },
-  { path: '/deadlines', label: 'المواعيد القانونية', icon: Bell },
-  { path: '/procedures', label: 'الإجراءات', icon: ClipboardList },
-  { path: '/documents', label: 'الأرشيف الضوئي', icon: FileText },
-  { path: '/finance', label: 'المالية', icon: DollarSign },
-  { path: '/reports', label: 'التقارير', icon: TrendingUp },
+  { path: '/', label: 'لوحة التحكم', icon: LayoutDashboard, roles: ['admin', 'lawyer', 'staff', 'client'] },
+  { path: '/clients', label: 'الموكلين', icon: Users, roles: ['admin', 'lawyer', 'staff'] },
+  { path: '/cases', label: 'القضايا', icon: Briefcase, roles: ['admin', 'lawyer', 'staff', 'client'] },
+  { path: '/sessions', label: 'رول الجلسات', icon: CalendarClock, roles: ['admin', 'lawyer', 'staff', 'client'] },
+  { path: '/expert-sessions', label: 'جلسات الخبراء', icon: Users, roles: ['admin', 'lawyer', 'staff', 'client'] },
+  { path: '/deadlines', label: 'المواعيد القانونية', icon: Bell, roles: ['admin', 'lawyer', 'staff'] },
+  { path: '/procedures', label: 'الإجراءات', icon: ClipboardList, roles: ['admin', 'lawyer', 'staff'] },
+  { path: '/tasks', label: 'المهام', icon: CheckCircle2, roles: ['admin', 'lawyer', 'staff'] },
+  { path: '/documents', label: 'الأرشيف الضوئي', icon: FileText, roles: ['admin', 'lawyer', 'staff', 'client'] },
+  { path: '/finance', label: 'المالية', icon: DollarSign, roles: ['admin', 'lawyer'] },
+  { path: '/reports', label: 'التقارير', icon: TrendingUp, roles: ['admin', 'lawyer'] },
 ];
 
 export default function Layout({ children, user }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [notifCenterOpen, setNotifCenterOpen] = useState(false);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Case[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [allCases, setAllCases] = useState<Case[]>([]);
   const location = useLocation();
   const navigate = useNavigate();
+
+  const filteredNavItems = navItems.filter(item => 
+    !user || item.roles.includes(user.role)
+  );
+
+  useEffect(() => {
+    if (!user) return;
+
+    // Generate notifications on login
+    generateNotifications(user.uid, user.role);
+
+    const unsubNotifs = onSnapshot(
+      query(collection(db, 'notifications'), where('userId', '==', user.uid), where('isRead', '==', false), limit(10)),
+      (snapshot) => {
+        setNotifications(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AppNotification)));
+      },
+      (err) => handleFirestoreError(err, OperationType.LIST, 'notifications')
+    );
+
+    const unsubCases = onSnapshot(collection(db, 'cases'), (snapshot) => {
+      const cases = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case));
+      // If client, only show their cases
+      if (user?.role === 'client') {
+        const clientCases = cases.filter(c => c.clientId === user.uid || c.clientName === user.name);
+        setAllCases(clientCases);
+      } else {
+        setAllCases(cases);
+      }
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'cases'));
+
+    return () => {
+      unsubNotifs();
+      unsubCases();
+    };
+  }, [user]);
+
+  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const q = e.target.value;
+    setSearchQuery(q);
+    if (q.length > 1) {
+      const results = allCases.filter(c => 
+        c.caseNumber?.includes(q) || 
+        c.clientName?.includes(q) || 
+        c.autoNumber?.includes(q)
+      ).slice(0, 5);
+      setSearchResults(results);
+      setIsSearching(true);
+    } else {
+      setIsSearching(false);
+    }
+  };
 
   const handleLogout = async () => {
     await signOut(auth);
     navigate('/');
   };
+
+  const unreadCount = notifications.length;
 
   return (
     <div className="min-h-screen bg-slate-50 flex rtl font-sans" dir="rtl">
@@ -63,7 +127,7 @@ export default function Layout({ children, user }: LayoutProps) {
         </div>
 
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-          {navItems.map((item) => {
+          {filteredNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
             return (
@@ -131,7 +195,7 @@ export default function Layout({ children, user }: LayoutProps) {
                 </button>
               </div>
               <nav className="flex-1 p-4 space-y-1">
-                {navItems.map((item) => {
+                {filteredNavItems.map((item) => {
                   const Icon = item.icon;
                   const isActive = location.pathname === item.path;
                   return (
@@ -175,20 +239,70 @@ export default function Layout({ children, user }: LayoutProps) {
             >
               <Menu className="w-6 h-6 text-slate-600" />
             </button>
-            <div className="hidden md:flex items-center gap-2 bg-slate-100 px-4 py-2 rounded-xl border border-slate-200 w-96">
-              <Search className="w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="بحث بالاسم، رقم القضية، أو الرقم الآلي..."
-                className="bg-transparent border-none focus:ring-0 text-sm w-full placeholder:text-slate-400 font-medium"
-              />
+            <div className="hidden md:block relative">
+              <div className="flex items-center gap-2 bg-slate-100 px-4 py-2 rounded-xl border border-slate-200 w-96">
+                <Search className="w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="بحث بالاسم، رقم القضية، أو الرقم الآلي..."
+                  className="bg-transparent border-none focus:ring-0 text-sm w-full placeholder:text-slate-400 font-medium"
+                  value={searchQuery}
+                  onChange={handleSearch}
+                />
+              </div>
+              
+              {/* Search Results Dropdown */}
+              <AnimatePresence>
+                {isSearching && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 10 }}
+                    className="absolute top-full mt-2 w-full bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden z-50"
+                  >
+                    <div className="p-2 space-y-1">
+                      {searchResults.map(c => (
+                        <button
+                          key={c.id}
+                          onClick={() => {
+                            navigate(`/cases?id=${c.id}`);
+                            setIsSearching(false);
+                            setSearchQuery('');
+                          }}
+                          className="w-full p-3 text-right hover:bg-indigo-50 rounded-xl transition-all flex items-center justify-between group"
+                        >
+                          <div>
+                            <p className="text-sm font-black text-slate-900 group-hover:text-indigo-600 transition-colors">{c.caseNumber}</p>
+                            <p className="text-[10px] font-bold text-slate-400">{c.clientName}</p>
+                          </div>
+                          <span className="text-[10px] font-black text-indigo-600 bg-indigo-100 px-2 py-1 rounded-lg">
+                            {c.autoNumber || 'بدون رقم آلي'}
+                          </span>
+                        </button>
+                      ))}
+                      {searchResults.length === 0 && (
+                        <div className="p-8 text-center text-slate-400 font-bold text-sm">
+                          لا توجد نتائج بحث
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </div>
 
           <div className="flex items-center gap-3 lg:gap-6">
-            <button className="relative p-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-all">
+            <button
+              onClick={() => setNotifCenterOpen(true)}
+              className="relative p-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-all"
+            >
               <Bell className="w-6 h-6" />
-              <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+              {unreadCount > 0 && (
+                <span className="absolute top-2 right-2 w-4 h-4 bg-red-500 text-white text-[10px] font-black rounded-full border-2 border-white flex items-center justify-center">
+                  {unreadCount}
+                </span>
+              )}
             </button>
             <div className="h-8 w-px bg-slate-200 hidden sm:block"></div>
             <div className="flex items-center gap-3">
@@ -207,6 +321,12 @@ export default function Layout({ children, user }: LayoutProps) {
         <div className="p-4 lg:p-8 overflow-y-auto">
           {children}
         </div>
+
+        <NotificationCenter
+          isOpen={notifCenterOpen}
+          onClose={() => setNotifCenterOpen(false)}
+          user={user}
+        />
       </main>
     </div>
   );

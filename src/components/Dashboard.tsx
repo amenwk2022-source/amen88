@@ -12,7 +12,9 @@ import {
   Scale,
   Clock,
   CheckCircle2,
-  FileText
+  FileText,
+  Gavel,
+  Bell
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import {
@@ -30,54 +32,86 @@ import {
   Cell
 } from 'recharts';
 import { cn } from '../lib/utils';
-import { Case, Session } from '../types';
+import { Case, Session, ExpertSession, Judgment, AppNotification, UserProfile } from '../types';
+import { format, parseISO, differenceInDays } from 'date-fns';
+import { arSA } from 'date-fns/locale';
+import ClientPortal from './ClientPortal';
 
 const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444'];
 
-export default function Dashboard() {
+interface DashboardProps {
+  user: UserProfile;
+}
+
+export default function Dashboard({ user }: DashboardProps) {
   const [stats, setStats] = useState({
     totalCases: 0,
     activeCases: 0,
     wonCases: 0,
     totalClients: 0,
+    expertSessions: 0,
   });
   const [upcomingSessions, setUpcomingSessions] = useState<Session[]>([]);
+  const [upcomingExpertSessions, setUpcomingExpertSessions] = useState<ExpertSession[]>([]);
+  const [activeDeadlines, setActiveDeadlines] = useState<Judgment[]>([]);
+  const [recentNotifications, setRecentNotifications] = useState<AppNotification[]>([]);
   const [omittedSessions, setOmittedSessions] = useState<Session[]>([]);
-  const [deadlineAlerts, setDeadlineAlerts] = useState<{ type: string; message: string; caseId: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (user.role === 'client') return;
+
     // Real-time listener for cases
     const casesUnsub = onSnapshot(collection(db, 'cases'), (snapshot) => {
       const cases = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case));
-      setStats({
+      setStats(prev => ({
+        ...prev,
         totalCases: cases.length,
         activeCases: cases.filter(c => c.status === 'active').length,
-        wonCases: cases.filter(c => c.status === 'archive').length, // Assuming archive = finished
+        wonCases: cases.filter(c => c.status === 'archive').length,
         totalClients: new Set(cases.map(c => c.clientId)).size,
-      });
+      }));
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'cases'));
 
-      // Calculate deadline alerts
-      const alerts: { type: string; message: string; caseId: string }[] = [];
-      const now = new Date();
-      cases.forEach(c => {
-        if (c.status === 'active') {
-          const created = new Date(c.createdAt);
-          const diffDays = Math.floor((now.getTime() - created.getTime()) / (1000 * 3600 * 24));
-          if (c.caseType === 'إيجارات' && diffDays >= 10 && diffDays <= 15) {
-            alerts.push({ type: 'rent', message: `تنبيه إيجارات: اقتراب موعد الاستئناف (باقي ${15 - diffDays} أيام)`, caseId: c.id });
-          } else if (diffDays >= 25 && diffDays <= 30) {
-            alerts.push({ type: 'appeal', message: `تنبيه استئناف: اقتراب موعد الاستئناف (باقي ${30 - diffDays} أيام)`, caseId: c.id });
-          }
-        }
-      });
-      setDeadlineAlerts(alerts);
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'cases');
-    });
+    // Expert Sessions count and upcoming
+    const today = new Date().toISOString().split('T')[0];
+    const expertSessionsUnsub = onSnapshot(collection(db, 'expertSessions'), (snapshot) => {
+      const sessions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExpertSession));
+      setStats(prev => ({ ...prev, expertSessions: sessions.length }));
+      setUpcomingExpertSessions(
+        sessions
+          .filter(s => s.date >= today && s.status === 'pending')
+          .sort((a, b) => a.date.localeCompare(b.date))
+          .slice(0, 3)
+      );
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'expertSessions'));
+
+    // Judgments (Deadlines)
+    const judgmentsUnsub = onSnapshot(collection(db, 'judgments'), (snapshot) => {
+      const judgments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Judgment));
+      setActiveDeadlines(
+        judgments
+          .filter(j => !j.isAppealed)
+          .sort((a, b) => a.appealDeadline.localeCompare(b.appealDeadline))
+          .slice(0, 3)
+      );
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'judgments'));
+
+    // Notifications
+    const notificationsUnsub = onSnapshot(
+      query(
+        collection(db, 'notifications'), 
+        where('userId', '==', user.uid),
+        orderBy('date', 'desc'), 
+        limit(5)
+      ),
+      (snapshot) => {
+        setRecentNotifications(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AppNotification)));
+      },
+      (err) => handleFirestoreError(err, OperationType.LIST, 'notifications')
+    );
 
     // Real-time listener for upcoming sessions
-    const today = new Date().toISOString().split('T')[0];
     const sessionsQuery = query(
       collection(db, 'sessions'),
       where('date', '>=', today),
@@ -86,15 +120,13 @@ export default function Dashboard() {
     );
     const sessionsUnsub = onSnapshot(sessionsQuery, (snapshot) => {
       setUpcomingSessions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Session)));
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'sessions');
-    });
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'sessions'));
 
-    // Anti-Omission: Sessions with date < today and no decision
+    // Anti-Omission
     const omittedQuery = query(
       collection(db, 'sessions'),
       where('date', '<', today),
-      where('decision', '==', ''), // Assuming empty string means no decision
+      where('decision', '==', ''),
       limit(10)
     );
     const omittedUnsub = onSnapshot(omittedQuery, (snapshot) => {
@@ -107,10 +139,17 @@ export default function Dashboard() {
 
     return () => {
       casesUnsub();
+      expertSessionsUnsub();
+      judgmentsUnsub();
+      notificationsUnsub();
       sessionsUnsub();
       omittedUnsub();
     };
-  }, []);
+  }, [user.role]);
+
+  if (user.role === 'client') {
+    return <ClientPortal user={user} />;
+  }
 
   const chartData = [
     { name: 'يناير', cases: 40 },
@@ -162,29 +201,6 @@ export default function Dashboard() {
             تحديث الآن
           </button>
         </motion.div>
-      )}
-
-      {/* Deadline Alerts */}
-      {deadlineAlerts.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {deadlineAlerts.map((alert, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: i * 0.1 }}
-              className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex items-center gap-4 shadow-sm"
-            >
-              <div className="p-2 bg-amber-100 rounded-lg">
-                <AlertCircle className="w-5 h-5 text-amber-600" />
-              </div>
-              <div className="flex-1">
-                <p className="text-amber-900 text-sm font-bold">{alert.message}</p>
-                <p className="text-amber-700 text-[10px] font-medium">قضية رقم: {alert.caseId.slice(0, 8)}</p>
-              </div>
-            </motion.div>
-          ))}
-        </div>
       )}
 
       {/* Stats Grid */}
@@ -293,8 +309,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Bottom Section: Upcoming Sessions & Recent Docs */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      {/* Bottom Section: Upcoming Sessions, Expert Sessions & Deadlines */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Upcoming Sessions */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
           <div className="flex items-center justify-between mb-6">
@@ -308,16 +324,14 @@ export default function Dashboard() {
             {upcomingSessions.length > 0 ? upcomingSessions.map((session, i) => (
               <div key={i} className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-indigo-200 transition-all group">
                 <div className="flex flex-col items-center justify-center bg-white p-2 rounded-lg border border-slate-200 min-w-[64px] shadow-sm">
-                  <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter">أبريل</span>
-                  <span className="text-xl font-black text-slate-900 leading-none">{new Date(session.date).getDate()}</span>
+                  <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter">
+                    {format(parseISO(session.date), 'MMMM', { locale: arSA })}
+                  </span>
+                  <span className="text-xl font-black text-slate-900 leading-none">{format(parseISO(session.date), 'dd')}</span>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-bold text-slate-900 truncate">قضية رقم {session.caseId.slice(0, 8)}</h4>
-                  <p className="text-xs text-slate-500 font-medium truncate">المحكمة الكلية - الدائرة 15</p>
-                </div>
-                <div className="text-right">
-                  <span className="inline-block px-2 py-1 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-lg mb-1">جلسة مرافعة</span>
-                  <p className="text-[10px] text-slate-400 font-bold">09:00 ص</p>
+                  <h4 className="text-sm font-bold text-slate-900 truncate">جلسة مرافعة</h4>
+                  <p className="text-xs text-slate-500 font-medium truncate">قضية رقم {session.caseId.slice(0, 8)}</p>
                 </div>
               </div>
             )) : (
@@ -326,27 +340,100 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Recent Documents */}
+        {/* Expert Sessions */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-              <FileText className="w-5 h-5 text-indigo-600" />
-              آخر المستندات المضافة
+              <Users className="w-5 h-5 text-indigo-600" />
+              جلسات الخبراء
             </h3>
-            <button className="text-indigo-600 text-sm font-bold hover:underline">المكتبة</button>
+            <button className="text-indigo-600 text-sm font-bold hover:underline">عرض الكل</button>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            {[1, 2, 3, 4].map((_, i) => (
-              <div key={i} className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3 group cursor-pointer hover:bg-white hover:shadow-md transition-all">
-                <div className="p-2 bg-white rounded-lg border border-slate-200 group-hover:bg-indigo-50 group-hover:border-indigo-200 transition-all">
-                  <FileText className="w-5 h-5 text-slate-400 group-hover:text-indigo-600" />
+          <div className="space-y-4">
+            {upcomingExpertSessions.length > 0 ? upcomingExpertSessions.map((session, i) => (
+              <div key={i} className="flex items-center gap-4 p-4 bg-amber-50/50 rounded-xl border border-amber-100 hover:border-amber-200 transition-all group">
+                <div className="flex flex-col items-center justify-center bg-white p-2 rounded-lg border border-amber-200 min-w-[64px] shadow-sm">
+                  <span className="text-[10px] font-black text-amber-600 uppercase tracking-tighter">
+                    {format(parseISO(session.date), 'MMMM', { locale: arSA })}
+                  </span>
+                  <span className="text-xl font-black text-slate-900 leading-none">{format(parseISO(session.date), 'dd')}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-bold text-slate-900 truncate">{session.expertName}</h4>
+                  <p className="text-xs text-slate-500 font-medium truncate">{session.officeLocation}</p>
+                </div>
+              </div>
+            )) : (
+              <div className="text-center py-8 text-slate-400 font-medium">لا توجد جلسات خبراء</div>
+            )}
+          </div>
+        </div>
+
+        {/* Legal Deadlines */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Gavel className="w-5 h-5 text-indigo-600" />
+              مواعيد الاستئناف
+            </h3>
+            <button className="text-indigo-600 text-sm font-bold hover:underline">عرض الكل</button>
+          </div>
+          <div className="space-y-4">
+            {activeDeadlines.length > 0 ? activeDeadlines.map((judgment, i) => {
+              const daysLeft = differenceInDays(parseISO(judgment.appealDeadline), new Date());
+              return (
+                <div key={i} className={cn(
+                  "p-4 rounded-xl border transition-all flex items-center justify-between",
+                  daysLeft <= 5 ? "bg-red-50 border-red-100" : "bg-slate-50 border-slate-100"
+                )}>
+                  <div className="min-w-0">
+                    <h4 className="text-sm font-bold text-slate-900 truncate">موعد استئناف</h4>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase">قضية رقم {judgment.caseId.slice(0, 8)}</p>
+                  </div>
+                  <div className={cn(
+                    "px-3 py-1 rounded-lg text-xs font-black",
+                    daysLeft <= 5 ? "bg-red-600 text-white" : "bg-slate-200 text-slate-700"
+                  )}>
+                    {daysLeft} يوم
+                  </div>
+                </div>
+              );
+            }) : (
+              <div className="text-center py-8 text-slate-400 font-medium">لا توجد مواعيد نشطة</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Notifications & Recent Docs */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Recent Notifications */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Bell className="w-5 h-5 text-indigo-600" />
+              آخر التنبيهات
+            </h3>
+            <button className="text-indigo-600 text-sm font-bold hover:underline">عرض الكل</button>
+          </div>
+          <div className="space-y-4">
+            {recentNotifications.map((notif, i) => (
+              <div key={i} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <div className={cn(
+                  "w-8 h-8 rounded-lg flex items-center justify-center shrink-0",
+                  notif.type === 'deadline' ? "bg-red-100 text-red-600" : "bg-indigo-100 text-indigo-600"
+                )}>
+                  <Bell className="w-4 h-4" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-bold text-slate-900 truncate">صحيفة دعوى.pdf</p>
-                  <p className="text-[10px] text-slate-400 font-medium">منذ ساعتين</p>
+                  <p className="text-xs font-bold text-slate-900 truncate">{notif.title}</p>
+                  <p className="text-[10px] text-slate-500 font-medium truncate">{notif.message}</p>
                 </div>
               </div>
             ))}
+            {recentNotifications.length === 0 && (
+              <div className="text-center py-8 text-slate-400 font-medium">لا توجد تنبيهات حديثة</div>
+            )}
           </div>
         </div>
       </div>

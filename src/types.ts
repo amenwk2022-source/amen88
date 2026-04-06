@@ -95,10 +95,24 @@ export interface ExpertSession {
 
 export interface AppNotification {
   id: string;
+  userId: string;
   title: string;
   message: string;
-  type: 'deadline' | 'session' | 'system';
+  type: 'deadline' | 'session' | 'system' | 'expert' | 'task';
   date: string;
   isRead: boolean;
   link?: string;
+  relatedId?: string;
+}
+
+export interface Task {
+  id: string;
+  title: string;
+  description?: string;
+  assignedTo: string; // User UID
+  dueDate: string;
+  status: 'pending' | 'in-progress' | 'completed';
+  priority: 'low' | 'medium' | 'high';
+  caseId?: string;
+  createdAt: string;
 }

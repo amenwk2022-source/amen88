@@ -16,6 +16,7 @@ import Procedures from './components/Procedures';
 import Reports from './components/Reports';
 import LegalDeadlines from './components/LegalDeadlines';
 import ExpertSessions from './components/ExpertSessions';
+import Tasks from './components/Tasks';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 export default function App() {
@@ -69,7 +70,7 @@ export default function App() {
             element={
               <Layout user={user}>
                 <Routes>
-                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/" element={<Dashboard user={user} />} />
                   <Route path="/clients" element={<ClientManagement />} />
                   <Route path="/cases" element={<CaseManagement />} />
                   <Route path="/sessions" element={<SessionRelay />} />
@@ -77,8 +78,9 @@ export default function App() {
                   <Route path="/documents" element={<EDMS />} />
                   <Route path="/finance" element={<FinanceManagement />} />
                   <Route path="/reports" element={<Reports />} />
-                  <Route path="/deadlines" element={<LegalDeadlines />} />
-                  <Route path="/expert-sessions" element={<ExpertSessions />} />
+                  <Route path="/deadlines" element={<LegalDeadlines user={user} />} />
+                  <Route path="/expert-sessions" element={<ExpertSessions user={user} />} />
+                  <Route path="/tasks" element={<Tasks user={user} />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </Layout>

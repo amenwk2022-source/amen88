@@ -33,11 +33,14 @@ export default function SessionRelay() {
     const unsub = onSnapshot(collection(db, 'sessions'), (snapshot) => {
       setSessions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Session)));
       setLoading(false);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'sessions');
+      setLoading(false);
     });
 
     const casesUnsub = onSnapshot(collection(db, 'cases'), (snapshot) => {
       setCases(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case)));
-    });
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'cases'));
 
     return () => {
       unsub();

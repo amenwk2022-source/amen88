@@ -56,6 +56,11 @@ service cloud.firestore {
       return data.caseId is string && data.date is string && data.date.size() > 0;
     }
 
+    function isValidTask(data) {
+      return data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.assignedTo is string && data.status in ['pending', 'in-progress', 'completed'];
+    }
+
     // ===============================================================
     // Match Rules
     // ===============================================================
@@ -97,6 +102,32 @@ service cloud.firestore {
     match /documents/{documentId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin() || isLawyer() || isStaff();
+    }
+
+    match /judgments/{judgmentId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || isLawyer() || isStaff();
+    }
+
+    match /expertSessions/{sessionId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || isLawyer() || isStaff();
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && request.auth.uid == resource.data.userId;
+      allow write: if isAdmin() || isLawyer() || isStaff();
+    }
+
+    match /tasks/{taskId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidTask(request.resource.data) && (isAdmin() || isLawyer() || isStaff());
+      allow update: if isAuthenticated() && isValidTask(request.resource.data) && (isAdmin() || isLawyer() || isStaff() || request.auth.uid == resource.data.assignedTo);
+      allow delete: if isAdmin() || isLawyer();
+    }
+
+    match /test/{docId} {
+      allow read: if true;
     }
   }
 }

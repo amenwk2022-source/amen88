@@ -39,7 +39,7 @@ export default function ProcedureManagement({ user }: ProcedureProps) {
 
     const casesUnsub = onSnapshot(collection(db, 'cases'), (snapshot) => {
       setCases(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case)));
-    });
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'cases'));
 
     return () => {
       unsub();

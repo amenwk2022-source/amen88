@@ -1,14 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { ExpertSession, Case } from '../types';
+import { ExpertSession, Case, UserProfile } from '../types';
 import { Users, Calendar, MapPin, Search, Plus, X, Save, Trash2, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
 import { format, isPast, isToday, isFuture } from 'date-fns';
 import { arSA } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 
-export default function ExpertSessions() {
+interface ExpertSessionsProps {
+  user: UserProfile;
+}
+
+export default function ExpertSessions({ user }: ExpertSessionsProps) {
   const [expertSessions, setExpertSessions] = useState<ExpertSession[]>([]);
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
@@ -28,12 +32,16 @@ export default function ExpertSessions() {
       (snapshot) => {
         setExpertSessions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExpertSession)));
         setLoading(false);
+      },
+      (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'expertSessions');
+        setLoading(false);
       }
     );
 
     const unsubCases = onSnapshot(collection(db, 'cases'), (snapshot) => {
       setCases(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case)));
-    });
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'cases'));
 
     return () => {
       unsubSessions();
