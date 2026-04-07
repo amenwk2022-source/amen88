@@ -1,22 +1,28 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { Plus, Search, Filter, Briefcase, Scale, Gavel, Archive, MoreVertical, Trash2, Edit2, X, Check, ArrowLeftRight, CalendarPlus, FileCheck, DollarSign } from 'lucide-react';
+import { Plus, Search, Filter, Briefcase, Scale, Gavel, Archive, MoreVertical, Trash2, Edit2, X, Check, ArrowLeftRight, CalendarPlus, FileCheck, DollarSign, Clock, FileText, Eye, CheckCircle2, Printer } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Case, CaseStatus, Client, Judgment } from '../types';
+import { Case, CaseStatus, Client, Judgment, UserProfile } from '../types';
 import { cn } from '../lib/utils';
-import { addDays, format } from 'date-fns';
+import { addDays, format, parseISO } from 'date-fns';
 
 const STATUS_MAP: Record<CaseStatus, { label: string; color: string; icon: any }> = {
   'pre-filing': { label: 'تحت الرفع', color: 'blue', icon: Briefcase },
   'active': { label: 'متداولة', color: 'indigo', icon: Scale },
   'execution': { label: 'تنفيذ', color: 'amber', icon: Gavel },
   'archive': { label: 'أرشيف', color: 'emerald', icon: Archive },
+  'judgment': { label: 'حكم قضائي', color: 'amber', icon: Gavel },
 };
 
-export default function CaseManagement() {
+interface CaseManagementProps {
+  user: UserProfile;
+}
+
+export default function CaseManagement({ user }: CaseManagementProps) {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const highlightedId = searchParams.get('id');
   const [cases, setCases] = useState<Case[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -34,30 +40,74 @@ export default function CaseManagement() {
   const [caseProcedures, setCaseProcedures] = useState<any[]>([]);
   const [caseDocuments, setCaseDocuments] = useState<any[]>([]);
   const [caseFinance, setCaseFinance] = useState<any | null>(null);
+  const [caseJudgments, setCaseJudgments] = useState<Judgment[]>([]);
+  const [caseNotes, setCaseNotes] = useState<{ id: string; text: string; date: string; author: string }[]>([]);
+  const [caseTasks, setCaseTasks] = useState<any[]>([]);
+  const [newNote, setNewNote] = useState('');
   const [sessionDate, setSessionDate] = useState('');
   const caseRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
     if (selectedCaseDetails) {
-      const sessUnsub = onSnapshot(query(collection(db, 'sessions'), where('caseId', '==', selectedCaseDetails.id), orderBy('date', 'desc')), (snap) => {
-        setCaseSessions(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      });
-      const procUnsub = onSnapshot(query(collection(db, 'procedures'), where('caseId', '==', selectedCaseDetails.id), orderBy('date', 'desc')), (snap) => {
-        setCaseProcedures(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      });
-      const docUnsub = onSnapshot(query(collection(db, 'documents'), where('caseId', '==', selectedCaseDetails.id), orderBy('uploadDate', 'desc')), (snap) => {
-        setCaseDocuments(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      });
-      const finUnsub = onSnapshot(query(collection(db, 'finance'), where('caseId', '==', selectedCaseDetails.id)), (snap) => {
-        if (!snap.empty) setCaseFinance({ id: snap.docs[0].id, ...snap.docs[0].data() });
-        else setCaseFinance(null);
-      });
+      const sessUnsub = onSnapshot(
+        query(collection(db, 'sessions'), where('caseId', '==', selectedCaseDetails.id), orderBy('date', 'desc')), 
+        (snap) => {
+          setCaseSessions(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        },
+        (err) => handleFirestoreError(err, OperationType.LIST, 'sessions')
+      );
+      const procUnsub = onSnapshot(
+        query(collection(db, 'procedures'), where('caseId', '==', selectedCaseDetails.id), orderBy('date', 'desc')), 
+        (snap) => {
+          setCaseProcedures(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        },
+        (err) => handleFirestoreError(err, OperationType.LIST, 'procedures')
+      );
+      const docUnsub = onSnapshot(
+        query(collection(db, 'documents'), where('caseId', '==', selectedCaseDetails.id), orderBy('uploadDate', 'desc')), 
+        (snap) => {
+          setCaseDocuments(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        },
+        (err) => handleFirestoreError(err, OperationType.LIST, 'documents')
+      );
+      const finUnsub = onSnapshot(
+        query(collection(db, 'finance'), where('caseId', '==', selectedCaseDetails.id)), 
+        (snap) => {
+          if (!snap.empty) setCaseFinance({ id: snap.docs[0].id, ...snap.docs[0].data() });
+          else setCaseFinance(null);
+        },
+        (err) => handleFirestoreError(err, OperationType.LIST, 'finance')
+      );
+      const judgUnsub = onSnapshot(
+        query(collection(db, 'judgments'), where('caseId', '==', selectedCaseDetails.id), orderBy('date', 'desc')), 
+        (snap) => {
+          setCaseJudgments(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Judgment)));
+        },
+        (err) => handleFirestoreError(err, OperationType.LIST, 'judgments')
+      );
+      const notesUnsub = onSnapshot(
+        query(collection(db, 'caseNotes'), where('caseId', '==', selectedCaseDetails.id), orderBy('date', 'desc')), 
+        (snap) => {
+          setCaseNotes(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any)));
+        },
+        (err) => handleFirestoreError(err, OperationType.LIST, 'caseNotes')
+      );
+      const tasksUnsub = onSnapshot(
+        query(collection(db, 'tasks'), where('caseId', '==', selectedCaseDetails.id)), 
+        (snap) => {
+          setCaseTasks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        },
+        (err) => handleFirestoreError(err, OperationType.LIST, 'tasks')
+      );
 
       return () => {
         sessUnsub();
         procUnsub();
         docUnsub();
         finUnsub();
+        judgUnsub();
+        notesUnsub();
+        tasksUnsub();
       };
     }
   }, [selectedCaseDetails]);
@@ -66,7 +116,10 @@ export default function CaseManagement() {
     date: new Date().toISOString().split('T')[0],
     type: 'initial',
     result: '',
-    notes: ''
+    notes: '',
+    appealDeadline: '',
+    appealStatus: 'pending',
+    isAppealed: false
   });
   const [formData, setFormData] = useState<Partial<Case>>({
     clientId: '',
@@ -81,21 +134,27 @@ export default function CaseManagement() {
   });
 
   useEffect(() => {
-    const q = query(collection(db, 'cases'), orderBy('createdAt', 'desc'));
+    let q = query(collection(db, 'cases'), orderBy('createdAt', 'desc'));
+    
+    // If client, only show their cases
+    if (user.role === 'client') {
+      q = query(collection(db, 'cases'), where('clientId', '==', user.uid), orderBy('createdAt', 'desc'));
+    }
+
     const unsub = onSnapshot(q, (snapshot) => {
       setCases(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case)));
       setLoading(false);
-    });
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'cases'));
 
     const clientsUnsub = onSnapshot(collection(db, 'clients'), (snapshot) => {
       setClients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Client)));
-    });
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'clients'));
 
     return () => {
       unsub();
       clientsUnsub();
     };
-  }, []);
+  }, [user.uid, user.role]);
 
   useEffect(() => {
     if (highlightedId && caseRefs.current[highlightedId]) {
@@ -104,8 +163,32 @@ export default function CaseManagement() {
     }
   }, [highlightedId, loading]);
 
+  const handleAddNote = async () => {
+    if (!newNote.trim() || !selectedCaseDetails) return;
+    try {
+      await addDoc(collection(db, 'caseNotes'), {
+        caseId: selectedCaseDetails.id,
+        text: newNote,
+        date: new Date().toISOString(),
+        author: user.name
+      });
+      setNewNote('');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'caseNotes');
+    }
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    try {
+      await deleteDoc(doc(db, 'caseNotes', noteId));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, 'caseNotes');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (user.role === 'client') return;
     try {
       const client = clients.find(c => c.id === formData.clientId);
       const data = {
@@ -131,9 +214,10 @@ export default function CaseManagement() {
   };
 
   const handleMoveToJudgment = async (id: string) => {
+    if (user.role === 'client') return;
     try {
       await updateDoc(doc(db, 'cases', id), {
-        status: 'archive',
+        status: 'judgment',
         updatedAt: new Date().toISOString()
       });
     } catch (error) {
@@ -142,6 +226,7 @@ export default function CaseManagement() {
   };
 
   const handleDelete = async (id: string) => {
+    if (user.role === 'client') return;
     if (!window.confirm('هل أنت متأكد من حذف هذه القضية؟')) return;
     try {
       await deleteDoc(doc(db, 'cases', id));
@@ -152,6 +237,7 @@ export default function CaseManagement() {
 
   const handleAddSession = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (user.role === 'client') return;
     if (!selectedCaseForSession || !sessionDate) return;
 
     try {
@@ -173,6 +259,7 @@ export default function CaseManagement() {
 
   const handleAddJudgment = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (user.role === 'client') return;
     if (!selectedCaseForJudgment || !judgmentData.date || !judgmentData.result) return;
 
     try {
@@ -183,21 +270,30 @@ export default function CaseManagement() {
         date: judgmentData.date,
         type: judgmentData.type,
         result: judgmentData.result,
-        appealDeadline,
-        isAppealed: false,
+        appealDeadline: judgmentData.appealDeadline || appealDeadline,
+        appealStatus: judgmentData.appealStatus || 'pending',
+        isAppealed: judgmentData.isAppealed || false,
         notes: judgmentData.notes,
         createdAt: new Date().toISOString()
       });
 
-      // Update case status to archive
+      // Update case status to judgment
       await updateDoc(doc(db, 'cases', selectedCaseForJudgment.id), {
-        status: 'archive',
+        status: 'judgment',
         updatedAt: new Date().toISOString()
       });
 
       setIsJudgmentModalOpen(false);
       setSelectedCaseForJudgment(null);
-      setJudgmentData({ date: new Date().toISOString().split('T')[0], type: 'initial', result: '', notes: '' });
+      setJudgmentData({ 
+        date: new Date().toISOString().split('T')[0], 
+        type: 'initial', 
+        result: '', 
+        notes: '',
+        appealDeadline: '',
+        appealStatus: 'pending',
+        isAppealed: false
+      });
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'judgments');
     }
@@ -213,6 +309,14 @@ export default function CaseManagement() {
     return matchesTab && matchesSearch;
   });
 
+  const timelineEvents = [
+    ...caseSessions.map(s => ({ ...s, timelineType: 'session', timelineDate: s.date })),
+    ...caseProcedures.map(p => ({ ...p, timelineType: 'procedure', timelineDate: p.date })),
+    ...caseJudgments.map(j => ({ ...j, timelineType: 'judgment', timelineDate: j.date }))
+  ].sort((a, b) => b.timelineDate.localeCompare(a.timelineDate));
+
+  const isLawyer = user.role === 'admin' || user.role === 'lawyer';
+
   return (
     <div className="space-y-6 rtl" dir="rtl">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -220,17 +324,19 @@ export default function CaseManagement() {
           <h1 className="text-2xl font-black text-slate-900 mb-1">إدارة القضايا (The Four Pillars)</h1>
           <p className="text-slate-500 font-medium">تتبع دورة حياة القضايا من التجهيز إلى الأرشفة.</p>
         </div>
-        <button
-          onClick={() => {
-            setEditingCase(null);
-            setFormData({ clientId: '', status: 'pre-filing' });
-            setIsModalOpen(true);
-          }}
-          className="flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"
-        >
-          <Plus className="w-5 h-5" />
-          إضافة قضية جديدة
-        </button>
+        {isLawyer && (
+          <button
+            onClick={() => {
+              setEditingCase(null);
+              setFormData({ clientId: '', status: 'pre-filing' });
+              setIsModalOpen(true);
+            }}
+            className="flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"
+          >
+            <Plus className="w-5 h-5" />
+            إضافة قضية جديدة
+          </button>
+        )}
       </div>
 
       {/* Tabs & Local Search */}
@@ -331,47 +437,158 @@ export default function CaseManagement() {
               </div>
 
               <div className="flex items-center gap-3 lg:border-r lg:pr-6 lg:border-slate-100" onClick={(e) => e.stopPropagation()}>
-                <button
-                  onClick={() => {
-                    setEditingCase(c);
-                    setFormData(c);
-                    setIsModalOpen(true);
-                  }}
-                  className="p-3 bg-slate-50 text-slate-600 rounded-xl hover:bg-indigo-50 hover:text-indigo-600 transition-all border border-slate-100"
-                >
-                  <Edit2 className="w-5 h-5" />
-                </button>
-                <button 
-                  onClick={() => {
-                    setSelectedCaseForSession(c);
-                    setIsSessionModalOpen(true);
-                  }}
-                  className="p-3 bg-slate-50 text-indigo-600 rounded-xl hover:bg-indigo-100 transition-all border border-slate-100"
-                  title="إضافة جلسة"
-                >
-                  <CalendarPlus className="w-5 h-5" />
-                </button>
-                <button 
-                  onClick={() => handleDelete(c.id)}
-                  className="p-3 bg-slate-50 text-slate-600 rounded-xl hover:bg-red-50 hover:text-red-600 transition-all border border-slate-100"
-                >
-                  <Trash2 className="w-5 h-5" />
-                </button>
-                <button 
-                  onClick={() => {
-                    setSelectedCaseForJudgment(c);
-                    setIsJudgmentModalOpen(true);
-                  }}
-                  className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-slate-800 transition-all shadow-lg shadow-slate-100"
-                >
-                  <Gavel className="w-4 h-4" />
-                  تحويل لحكم
-                </button>
+                {isLawyer && (
+                  <>
+                    <button
+                      onClick={() => {
+                        setEditingCase(c);
+                        setFormData(c);
+                        setIsModalOpen(true);
+                      }}
+                      className="p-3 bg-slate-50 text-slate-600 rounded-xl hover:bg-indigo-50 hover:text-indigo-600 transition-all border border-slate-100"
+                    >
+                      <Edit2 className="w-5 h-5" />
+                    </button>
+                    <button 
+                      onClick={() => {
+                        setSelectedCaseForSession(c);
+                        setIsSessionModalOpen(true);
+                      }}
+                      className="p-3 bg-slate-50 text-indigo-600 rounded-xl hover:bg-indigo-100 transition-all border border-slate-100"
+                      title="إضافة جلسة"
+                    >
+                      <CalendarPlus className="w-5 h-5" />
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(c.id)}
+                      className="p-3 bg-slate-50 text-slate-600 rounded-xl hover:bg-red-50 hover:text-red-600 transition-all border border-slate-100"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                    <button 
+                      onClick={() => {
+                        setSelectedCaseForJudgment(c);
+                        setIsJudgmentModalOpen(true);
+                      }}
+                      className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-slate-800 transition-all shadow-lg shadow-slate-100"
+                    >
+                      <Gavel className="w-4 h-4" />
+                      تحويل لحكم
+                    </button>
+                  </>
+                )}
+                {!isLawyer && (
+                  <button
+                    onClick={() => setSelectedCaseDetails(c)}
+                    className="flex items-center gap-2 text-indigo-600 font-bold text-xs hover:bg-indigo-50 px-4 py-2 rounded-xl transition-all"
+                  >
+                    <Eye className="w-4 h-4" />
+                    عرض التفاصيل
+                  </button>
+                )}
               </div>
             </motion.div>
           );
         })}
       </div>
+
+      {/* Print-only Case Details Section */}
+      {selectedCaseDetails && (
+        <div className="hidden print:block p-12 bg-white text-right" dir="rtl">
+          <div className="flex justify-between items-start mb-10 border-b-2 border-slate-900 pb-8">
+            <div>
+              <h1 className="text-2xl font-black text-slate-900">مكتب المحامي محمد امين علي الصايغ</h1>
+              <p className="text-sm text-slate-500 font-bold">للمحاماة والاستشارات القانونية</p>
+            </div>
+            <div className="text-left">
+              <p className="font-bold text-slate-900">التاريخ: {new Date().toLocaleDateString('ar-EG')}</p>
+              <p className="font-bold text-slate-900">رقم الملف: {selectedCaseDetails.caseNumber}</p>
+            </div>
+          </div>
+
+          <div className="text-center mb-10">
+            <h2 className="text-3xl font-black bg-slate-100 inline-block px-12 py-4 rounded-2xl border-2 border-slate-900">
+              تقرير تفاصيل القضية
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-2 gap-8 mb-12">
+            <div className="space-y-4">
+              <div className="border-b border-slate-200 pb-2">
+                <p className="text-xs font-black text-slate-400 uppercase mb-1">الموكل</p>
+                <p className="text-lg font-bold text-slate-900">{selectedCaseDetails.clientName}</p>
+              </div>
+              <div className="border-b border-slate-200 pb-2">
+                <p className="text-xs font-black text-slate-400 uppercase mb-1">الخصم</p>
+                <p className="text-lg font-bold text-slate-900">{selectedCaseDetails.opponent || '---'}</p>
+              </div>
+              <div className="border-b border-slate-200 pb-2">
+                <p className="text-xs font-black text-slate-400 uppercase mb-1">المحكمة</p>
+                <p className="text-lg font-bold text-slate-900">{selectedCaseDetails.court || '---'}</p>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div className="border-b border-slate-200 pb-2">
+                <p className="text-xs font-black text-slate-400 uppercase mb-1">رقم القضية</p>
+                <p className="text-lg font-bold text-slate-900">{selectedCaseDetails.caseNumber}</p>
+              </div>
+              <div className="border-b border-slate-200 pb-2">
+                <p className="text-xs font-black text-slate-400 uppercase mb-1">الدائرة</p>
+                <p className="text-lg font-bold text-slate-900">{selectedCaseDetails.circuit || '---'}</p>
+              </div>
+              <div className="border-b border-slate-200 pb-2">
+                <p className="text-xs font-black text-slate-400 uppercase mb-1">الحالة</p>
+                <p className="text-lg font-bold text-slate-900">{STATUS_MAP[selectedCaseDetails.status]?.label}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mb-12">
+            <h3 className="text-xl font-black text-slate-900 mb-4 border-r-4 border-indigo-600 pr-4">نوع الدعوى</h3>
+            <p className="text-lg text-slate-700 leading-relaxed bg-slate-50 p-6 rounded-2xl border border-slate-100">
+              {selectedCaseDetails.caseType || 'لا يوجد نوع مسجل'}
+            </p>
+          </div>
+
+          <div className="mb-12">
+            <h3 className="text-xl font-black text-slate-900 mb-4 border-r-4 border-indigo-600 pr-4">الخط الزمني للجلسات والإجراءات</h3>
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-slate-100">
+                  <th className="border border-slate-300 p-3 text-right">التاريخ</th>
+                  <th className="border border-slate-300 p-3 text-right">النوع</th>
+                  <th className="border border-slate-300 p-3 text-right">القرار / التفاصيل</th>
+                </tr>
+              </thead>
+              <tbody>
+                {timelineEvents.map((event: any, i: number) => (
+                  <tr key={i}>
+                    <td className="border border-slate-300 p-3 text-sm font-bold">{event.timelineDate}</td>
+                    <td className="border border-slate-300 p-3 text-sm">{event.timelineType === 'session' ? 'جلسة' : event.timelineType === 'procedure' ? 'إجراء' : 'حكم'}</td>
+                    <td className="border border-slate-300 p-3 text-sm">{event.decision || event.description || event.result}</td>
+                  </tr>
+                ))}
+                {timelineEvents.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="border border-slate-300 p-8 text-center text-slate-400">لا توجد أحداث مسجلة</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mt-20 flex justify-between items-end">
+            <div className="text-center w-64">
+              <p className="font-black text-lg mb-16 text-slate-900">توقيع الموكل</p>
+              <div className="border-b-2 border-slate-900"></div>
+            </div>
+            <div className="text-center w-64">
+              <p className="font-black text-lg mb-16 text-slate-900">ختم المكتب</p>
+              <div className="border-b-2 border-slate-900"></div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add/Edit Modal */}
       <AnimatePresence>
@@ -587,87 +804,6 @@ export default function CaseManagement() {
         )}
       </AnimatePresence>
 
-      {/* Add Judgment Modal */}
-      <AnimatePresence>
-        {isJudgmentModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsJudgmentModalOpen(false)}
-              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
-            >
-              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-                <h2 className="text-xl font-black text-slate-900">تسجيل منطوق الحكم</h2>
-                <button onClick={() => setIsJudgmentModalOpen(false)} className="p-2 hover:bg-white rounded-xl transition-all">
-                  <X className="w-5 h-5 text-slate-400" />
-                </button>
-              </div>
-              <form onSubmit={handleAddJudgment} className="p-8 space-y-6">
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-700">تاريخ صدور الحكم</label>
-                    <input
-                      required
-                      type="date"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 transition-all"
-                      value={judgmentData.date}
-                      onChange={(e) => setJudgmentData({ ...judgmentData, date: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-700">درجة التقاضي</label>
-                    <select
-                      required
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 transition-all"
-                      value={judgmentData.type}
-                      onChange={(e) => setJudgmentData({ ...judgmentData, type: e.target.value as any })}
-                    >
-                      <option value="initial">ابتدائي</option>
-                      <option value="appeal">استئناف</option>
-                      <option value="cassation">تمييز</option>
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-700">منطوق الحكم</label>
-                    <textarea
-                      required
-                      rows={3}
-                      placeholder="اكتب منطوق الحكم هنا..."
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 transition-all"
-                      value={judgmentData.result}
-                      onChange={(e) => setJudgmentData({ ...judgmentData, result: e.target.value })}
-                    />
-                  </div>
-                </div>
-                <div className="pt-4 flex gap-4">
-                  <button
-                    type="submit"
-                    className="flex-1 bg-indigo-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
-                  >
-                    <FileCheck className="w-5 h-5" />
-                    حفظ وأرشفة
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsJudgmentModalOpen(false)}
-                    className="px-8 bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl hover:bg-slate-200 transition-all"
-                  >
-                    إلغاء
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
       {/* Case Details Modal */}
       <AnimatePresence>
         {selectedCaseDetails && (
@@ -695,9 +831,18 @@ export default function CaseManagement() {
                     <p className="text-sm text-slate-500 font-bold">{selectedCaseDetails.clientName}</p>
                   </div>
                 </div>
-                <button onClick={() => setSelectedCaseDetails(null)} className="p-2 hover:bg-white rounded-xl transition-all">
-                  <X className="w-6 h-6 text-slate-400" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => window.print()}
+                    className="flex items-center gap-2 bg-slate-100 text-slate-700 px-4 py-2 rounded-xl font-bold text-sm hover:bg-slate-200 transition-all shadow-sm"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>طباعة التفاصيل</span>
+                  </button>
+                  <button onClick={() => setSelectedCaseDetails(null)} className="p-2 hover:bg-white rounded-xl transition-all">
+                    <X className="w-6 h-6 text-slate-400" />
+                  </button>
+                </div>
               </div>
 
               <div className="flex-1 overflow-y-auto p-8 space-y-8">
@@ -721,118 +866,299 @@ export default function CaseManagement() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  {/* Sessions Section */}
-                  <div className="space-y-4">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  {/* Timeline Section */}
+                  <div className="lg:col-span-2 space-y-4">
                     <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                      <CalendarPlus className="w-5 h-5 text-indigo-600" />
-                      الجلسات السابقة والقادمة
+                      <Clock className="w-5 h-5 text-indigo-600" />
+                      الخط الزمني للقضية (Case Timeline)
                     </h3>
-                    <div className="space-y-3">
-                      {caseSessions.map((s, i) => (
-                        <div key={i} className="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm flex items-center justify-between">
-                          <div>
-                            <p className="text-sm font-bold text-slate-900">{s.date}</p>
-                            <p className="text-xs text-slate-500 font-medium">{s.decision || 'بانتظار القرار'}</p>
-                          </div>
-                          {s.nextDate && (
-                            <div className="text-left">
-                              <p className="text-[10px] font-black text-indigo-600 uppercase">الجلسة القادمة</p>
-                              <p className="text-xs font-bold text-slate-900">{s.nextDate}</p>
+                    <div className="relative space-y-6 before:absolute before:inset-y-0 before:right-6 before:w-0.5 before:bg-slate-100">
+                      {timelineEvents.map((event, i) => (
+                        <div key={i} className="relative pr-12">
+                          <div className={cn(
+                            "absolute right-4 top-1 w-4 h-4 rounded-full border-4 border-white shadow-sm z-10",
+                            event.timelineType === 'session' ? "bg-indigo-600" : 
+                            event.timelineType === 'procedure' ? "bg-emerald-600" : "bg-amber-600"
+                          )} />
+                          <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{event.timelineDate}</span>
+                              <span className={cn(
+                                "px-2 py-0.5 rounded-lg text-[10px] font-black uppercase",
+                                event.timelineType === 'session' ? "bg-indigo-50 text-indigo-600" : 
+                                event.timelineType === 'procedure' ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"
+                              )}>
+                                {event.timelineType === 'session' ? 'جلسة' : 
+                                 event.timelineType === 'procedure' ? 'إجراء' : 'حكم'}
+                              </span>
                             </div>
+                            <h4 className="text-sm font-bold text-slate-900">
+                              {event.timelineType === 'session' ? 'جلسة مرافعة' : 
+                               event.timelineType === 'procedure' ? event.type : `حكم ${event.type === 'initial' ? 'ابتدائي' : event.type === 'appeal' ? 'استئناف' : 'تمييز'}`}
+                            </h4>
+                            <p className="text-xs text-slate-500 font-medium mt-1">
+                              {event.timelineType === 'session' ? (event.decision || 'بانتظار القرار') : 
+                               event.timelineType === 'procedure' ? event.notes : event.result}
+                            </p>
+                            {event.nextDate && (
+                              <div className="mt-3 pt-3 border-t border-slate-50 flex items-center gap-2">
+                                <CalendarPlus className="w-3 h-3 text-indigo-600" />
+                                <span className="text-[10px] font-bold text-slate-400">الجلسة القادمة:</span>
+                                <span className="text-[10px] font-black text-indigo-600">{event.nextDate}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                      {timelineEvents.length === 0 && (
+                        <div className="text-center py-12 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
+                          <Clock className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                          <p className="text-slate-400 font-bold">لا توجد أحداث مسجلة لهذه القضية</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Documents & Finance Sidebar */}
+                  <div className="space-y-8">
+                    {/* Documents Section */}
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                        <FileCheck className="w-5 h-5 text-indigo-600" />
+                        المستندات
+                      </h3>
+                      <div className="grid grid-cols-1 gap-3">
+                        {caseDocuments.map((d, i) => (
+                          <a 
+                            key={i} 
+                            href={d.fileUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="p-4 bg-slate-50 border border-slate-100 rounded-2xl hover:border-indigo-200 transition-all group flex items-center gap-3"
+                          >
+                            <FileText className="w-6 h-6 text-indigo-600 group-hover:scale-110 transition-transform" />
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-900 truncate">{d.title}</p>
+                              <p className="text-[10px] text-slate-400">{d.uploadDate}</p>
+                            </div>
+                          </a>
+                        ))}
+                        {caseDocuments.length === 0 && <p className="text-center py-8 text-slate-400 font-bold text-xs">لا توجد مستندات</p>}
+                      </div>
+                    </div>
+
+                    {/* Case Notes */}
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                        <FileText className="w-5 h-5 text-indigo-600" />
+                        ملاحظات داخلية
+                      </h3>
+                      <div className="space-y-3">
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            placeholder="أضف ملاحظة جديدة..."
+                            className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-600 transition-all"
+                            value={newNote}
+                            onChange={(e) => setNewNote(e.target.value)}
+                            onKeyPress={(e) => e.key === 'Enter' && handleAddNote()}
+                          />
+                          <button
+                            onClick={handleAddNote}
+                            className="bg-indigo-600 text-white p-2 rounded-xl hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100"
+                          >
+                            <Plus className="w-5 h-5" />
+                          </button>
+                        </div>
+                        <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                          {caseNotes.map((note) => (
+                            <div key={note.id} className="bg-slate-50 p-3 rounded-xl border border-slate-100 group relative">
+                              <p className="text-sm text-slate-700 font-medium leading-relaxed">{note.text}</p>
+                              <div className="flex items-center justify-between mt-2">
+                                <span className="text-[10px] text-slate-400 font-bold">{note.author} - {format(parseISO(note.date), 'yyyy/MM/dd HH:mm')}</span>
+                                <button 
+                                  onClick={() => handleDeleteNote(note.id)}
+                                  className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-all"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                          {caseNotes.length === 0 && (
+                            <p className="text-center py-4 text-slate-400 text-xs font-bold italic">لا توجد ملاحظات مسجلة</p>
                           )}
                         </div>
-                      ))}
-                      {caseSessions.length === 0 && <p className="text-center py-8 text-slate-400 font-bold text-sm">لا توجد جلسات مسجلة</p>}
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Procedures Section */}
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                      <Scale className="w-5 h-5 text-indigo-600" />
-                      الإجراءات المتخذة
-                    </h3>
-                    <div className="space-y-3">
-                      {caseProcedures.map((p, i) => (
-                        <div key={i} className="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm flex items-center gap-3">
-                          <div className="p-2 bg-slate-50 rounded-lg">
-                            <Check className="w-4 h-4 text-emerald-600" />
+                    {/* Case Tasks */}
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                        <CheckCircle2 className="w-5 h-5 text-indigo-600" />
+                        المهام المرتبطة
+                      </h3>
+                      <div className="space-y-2">
+                        {caseTasks.map((task) => (
+                          <div key={task.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                            <div className="flex items-center gap-3">
+                              <div className={cn(
+                                "w-2 h-2 rounded-full",
+                                task.status === 'completed' ? "bg-emerald-500" : "bg-amber-500"
+                              )} />
+                              <span className={cn("text-sm font-bold", task.status === 'completed' ? "text-slate-400 line-through" : "text-slate-700")}>
+                                {task.title}
+                              </span>
+                            </div>
+                            <span className="text-[10px] font-black text-slate-400 uppercase">{task.status === 'completed' ? 'مكتملة' : 'قيد التنفيذ'}</span>
                           </div>
-                          <div>
-                            <p className="text-sm font-bold text-slate-900">{p.type}</p>
-                            <p className="text-xs text-slate-500 font-medium">{p.date}</p>
-                          </div>
-                        </div>
-                      ))}
-                      {caseProcedures.length === 0 && <p className="text-center py-8 text-slate-400 font-bold text-sm">لا توجد إجراءات مسجلة</p>}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  {/* Documents Section */}
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                      <FileCheck className="w-5 h-5 text-indigo-600" />
-                      المستندات المرفقة
-                    </h3>
-                    <div className="grid grid-cols-2 gap-4">
-                      {caseDocuments.map((d, i) => (
-                        <a 
-                          key={i} 
-                          href={d.fileUrl} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="p-4 bg-slate-50 border border-slate-100 rounded-2xl hover:border-indigo-200 transition-all group"
+                        ))}
+                        {caseTasks.length === 0 && (
+                          <p className="text-center py-4 text-slate-400 text-xs font-bold italic">لا توجد مهام مرتبطة</p>
+                        )}
+                        <button 
+                          onClick={() => navigate('/tasks')}
+                          className="w-full py-2 text-xs font-black text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all border border-dashed border-indigo-200"
                         >
-                          <FileCheck className="w-8 h-8 text-indigo-600 mb-2 group-hover:scale-110 transition-transform" />
-                          <p className="text-xs font-bold text-slate-900 truncate">{d.title}</p>
-                          <p className="text-[10px] text-slate-400">{d.uploadDate}</p>
-                        </a>
-                      ))}
-                      {caseDocuments.length === 0 && <div className="col-span-2 text-center py-8 text-slate-400 font-bold text-sm">لا توجد مستندات</div>}
+                          إدارة المهام
+                        </button>
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Finance Summary */}
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                      <DollarSign className="w-5 h-5 text-indigo-600" />
-                      الموقف المالي
-                    </h3>
-                    {caseFinance ? (
-                      <div className="bg-indigo-600 p-6 rounded-3xl text-white shadow-xl shadow-indigo-100">
-                        <div className="grid grid-cols-2 gap-6">
-                          <div>
-                            <p className="text-indigo-200 text-[10px] font-black uppercase mb-1">إجمالي الأتعاب</p>
-                            <p className="text-xl font-black">{caseFinance.totalFees.toLocaleString()} د.ك</p>
-                          </div>
-                          <div>
-                            <p className="text-indigo-200 text-[10px] font-black uppercase mb-1">المبلغ المستلم</p>
-                            <p className="text-xl font-black">{caseFinance.receivedAmount.toLocaleString()} د.ك</p>
-                          </div>
-                          <div className="col-span-2 pt-4 border-t border-indigo-500/50">
-                            <div className="flex items-center justify-between">
-                              <p className="text-indigo-200 text-[10px] font-black uppercase">المتبقي</p>
-                              <p className="text-2xl font-black">{(caseFinance.totalFees - caseFinance.receivedAmount).toLocaleString()} د.ك</p>
+                    {/* Finance Summary */}
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                        <DollarSign className="w-5 h-5 text-indigo-600" />
+                        الملخص المالي
+                      </h3>
+                      {caseFinance ? (
+                        <div className="p-6 bg-indigo-600 rounded-3xl text-white shadow-xl shadow-indigo-100">
+                          <div className="space-y-4">
+                            <div>
+                              <p className="text-[10px] font-black uppercase tracking-widest opacity-60 mb-1">إجمالي الأتعاب</p>
+                              <p className="text-2xl font-black">{caseFinance.totalFees?.toLocaleString()} د.ك</p>
                             </div>
-                            <div className="mt-2 h-2 bg-indigo-900/30 rounded-full overflow-hidden">
-                              <div 
-                                className="h-full bg-white rounded-full" 
-                                style={{ width: `${(caseFinance.receivedAmount / caseFinance.totalFees) * 100}%` }}
-                              />
+                            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/10">
+                              <div>
+                                <p className="text-[10px] font-black uppercase tracking-widest opacity-60 mb-1">المسدد</p>
+                                <p className="text-sm font-bold">{caseFinance.receivedAmount?.toLocaleString()} د.ك</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-black uppercase tracking-widest opacity-60 mb-1">المتبقي</p>
+                                <p className="text-sm font-bold text-amber-300">{(caseFinance.totalFees - caseFinance.receivedAmount)?.toLocaleString()} د.ك</p>
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="p-8 bg-slate-50 border border-slate-100 rounded-3xl text-center">
-                        <p className="text-slate-400 font-bold text-sm">لا يوجد سجل مالي لهذه القضية</p>
-                      </div>
-                    )}
+                      ) : (
+                        <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 text-center">
+                          <p className="text-slate-400 font-bold text-sm">لا توجد بيانات مالية مسجلة</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Add Judgment Modal */}
+      <AnimatePresence>
+        {selectedCaseForJudgment && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-[40px] shadow-2xl w-full max-w-xl overflow-hidden border border-slate-100"
+            >
+              <div className="p-8 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-amber-100 rounded-2xl">
+                    <Gavel className="w-6 h-6 text-amber-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black text-slate-900">تسجيل حكم قضائي</h2>
+                    <p className="text-xs text-slate-500 font-bold mt-0.5">قضية رقم: {selectedCaseForJudgment.caseNumber}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setSelectedCaseForJudgment(null)}
+                  className="p-2 hover:bg-white rounded-xl transition-colors shadow-sm"
+                >
+                  <X className="w-5 h-5 text-slate-400" />
+                </button>
+              </div>
+
+              <div className="p-8 space-y-6">
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block pr-1">نوع الحكم</label>
+                    <select
+                      value={judgmentData.type}
+                      onChange={(e) => setJudgmentData({ ...judgmentData, type: e.target.value as any })}
+                      className="w-full p-4 bg-slate-50 border-2 border-transparent rounded-2xl focus:border-indigo-500 focus:bg-white transition-all outline-none font-bold text-sm"
+                    >
+                      <option value="initial">ابتدائي</option>
+                      <option value="appeal">استئناف</option>
+                      <option value="cassation">تمييز</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block pr-1">تاريخ الحكم</label>
+                    <input
+                      type="date"
+                      value={judgmentData.date}
+                      onChange={(e) => setJudgmentData({ ...judgmentData, date: e.target.value })}
+                      className="w-full p-4 bg-slate-50 border-2 border-transparent rounded-2xl focus:border-indigo-500 focus:bg-white transition-all outline-none font-bold text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block pr-1">منطوق الحكم</label>
+                  <textarea
+                    value={judgmentData.result}
+                    onChange={(e) => setJudgmentData({ ...judgmentData, result: e.target.value })}
+                    placeholder="اكتب منطوق الحكم هنا بالتفصيل..."
+                    className="w-full p-4 bg-slate-50 border-2 border-transparent rounded-2xl focus:border-indigo-500 focus:bg-white transition-all outline-none font-bold text-sm h-32 resize-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block pr-1">آخر موعد للاستئناف</label>
+                    <input
+                      type="date"
+                      value={judgmentData.appealDeadline}
+                      onChange={(e) => setJudgmentData({ ...judgmentData, appealDeadline: e.target.value })}
+                      className="w-full p-4 bg-slate-50 border-2 border-transparent rounded-2xl focus:border-indigo-500 focus:bg-white transition-all outline-none font-bold text-sm"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block pr-1">حالة الاستئناف</label>
+                    <select
+                      value={judgmentData.appealStatus}
+                      onChange={(e) => setJudgmentData({ ...judgmentData, appealStatus: e.target.value as any })}
+                      className="w-full p-4 bg-slate-50 border-2 border-transparent rounded-2xl focus:border-indigo-500 focus:bg-white transition-all outline-none font-bold text-sm"
+                    >
+                      <option value="pending">بانتظار الاستئناف</option>
+                      <option value="appealed">تم الاستئناف</option>
+                      <option value="final">حكم نهائي</option>
+                    </select>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleAddJudgment}
+                  className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black text-sm shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-3"
+                >
+                  <Gavel className="w-5 h-5" />
+                  حفظ الحكم وإغلاق القضية
+                </button>
               </div>
             </motion.div>
           </div>

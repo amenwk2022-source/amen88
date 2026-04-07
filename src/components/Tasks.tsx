@@ -48,6 +48,11 @@ export default function Tasks({ user }: TasksProps) {
   });
 
   useEffect(() => {
+    let cq = query(collection(db, 'cases'), orderBy('createdAt', 'desc'));
+    if (user.role === 'client') {
+      cq = query(collection(db, 'cases'), where('clientId', '==', user.uid));
+    }
+
     const unsubTasks = onSnapshot(
       query(collection(db, 'tasks'), orderBy('dueDate', 'asc')),
       (snapshot) => {
@@ -57,7 +62,7 @@ export default function Tasks({ user }: TasksProps) {
       (err) => handleFirestoreError(err, OperationType.LIST, 'tasks')
     );
 
-    const unsubCases = onSnapshot(collection(db, 'cases'), (snapshot) => {
+    const unsubCases = onSnapshot(cq, (snapshot) => {
       setCases(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case)));
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'cases'));
 
@@ -70,10 +75,11 @@ export default function Tasks({ user }: TasksProps) {
       unsubCases();
       unsubUsers();
     };
-  }, []);
+  }, [user.uid, user.role]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (user.role === 'client') return;
     try {
       if (editingTask) {
         await updateDoc(doc(db, 'tasks', editingTask.id), formData);
@@ -117,11 +123,14 @@ export default function Tasks({ user }: TasksProps) {
     }
   };
 
+  const isLawyer = user.role === 'admin' || user.role === 'lawyer';
+
   const filteredTasks = tasks.filter(t => {
     const matchesSearch = t.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
                          t.description?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === 'all' || t.status === statusFilter;
-    return matchesSearch && matchesStatus;
+    const matchesCase = cases.some(c => c.id === t.caseId);
+    return matchesSearch && matchesStatus && matchesCase;
   });
 
   return (
@@ -131,25 +140,27 @@ export default function Tasks({ user }: TasksProps) {
           <h1 className="text-2xl font-black text-slate-900 mb-1">إدارة المهام الداخلية</h1>
           <p className="text-slate-500 font-medium">تنظيم ومتابعة مهام فريق العمل.</p>
         </div>
-        <button
-          onClick={() => {
-            setEditingTask(null);
-            setFormData({
-              title: '',
-              description: '',
-              assignedTo: user.uid,
-              dueDate: new Date().toISOString().split('T')[0],
-              status: 'pending',
-              priority: 'medium',
-              caseId: ''
-            });
-            setIsModalOpen(true);
-          }}
-          className="flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"
-        >
-          <Plus className="w-5 h-5" />
-          إضافة مهمة جديدة
-        </button>
+        {isLawyer && (
+          <button
+            onClick={() => {
+              setEditingTask(null);
+              setFormData({
+                title: '',
+                description: '',
+                assignedTo: user.uid,
+                dueDate: new Date().toISOString().split('T')[0],
+                status: 'pending',
+                priority: 'medium',
+                caseId: ''
+              });
+              setIsModalOpen(true);
+            }}
+            className="flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"
+          >
+            <Plus className="w-5 h-5" />
+            إضافة مهمة جديدة
+          </button>
+        )}
       </div>
 
       {/* Filters */}
@@ -214,31 +225,35 @@ export default function Tasks({ user }: TasksProps) {
                 <div className="flex items-start justify-between mb-4">
                   <button 
                     onClick={() => toggleStatus(task)}
+                    disabled={!isLawyer}
                     className={cn(
                       "p-2 rounded-xl transition-all",
-                      task.status === 'completed' ? "bg-emerald-50 text-emerald-600" : "bg-slate-50 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"
+                      task.status === 'completed' ? "bg-emerald-50 text-emerald-600" : "bg-slate-50 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600",
+                      !isLawyer && "cursor-default"
                     )}
                   >
                     {task.status === 'completed' ? <CheckCircle2 className="w-6 h-6" /> : <Circle className="w-6 h-6" />}
                   </button>
-                  <div className="flex gap-1">
-                    <button 
-                      onClick={() => {
-                        setEditingTask(task);
-                        setFormData(task);
-                        setIsModalOpen(true);
-                      }}
-                      className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button 
-                      onClick={() => handleDelete(task.id)}
-                      className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                  {isLawyer && (
+                    <div className="flex gap-1">
+                      <button 
+                        onClick={() => {
+                          setEditingTask(task);
+                          setFormData(task);
+                          setIsModalOpen(true);
+                        }}
+                        className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => handleDelete(task.id)}
+                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <h3 className={cn(

@@ -19,11 +19,16 @@ export default function LegalDeadlines({ user }: LegalDeadlinesProps) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cq = query(collection(db, 'cases'), orderBy('createdAt', 'desc'));
+    if (user.role === 'client') {
+      cq = query(collection(db, 'cases'), where('clientId', '==', user.uid));
+    }
+
     const unsubJudgments = onSnapshot(collection(db, 'judgments'), (snapshot) => {
       setJudgments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Judgment)));
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'judgments'));
 
-    const unsubCases = onSnapshot(collection(db, 'cases'), (snapshot) => {
+    const unsubCases = onSnapshot(cq, (snapshot) => {
       setCases(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case)));
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'cases'));
 
@@ -48,7 +53,7 @@ export default function LegalDeadlines({ user }: LegalDeadlinesProps) {
       unsubCases();
       unsubNotifications();
     };
-  }, []);
+  }, [user.uid, user.role]);
 
   const getJudgmentCase = (caseId: string) => cases.find(c => c.id === caseId);
 
@@ -73,7 +78,7 @@ export default function LegalDeadlines({ user }: LegalDeadlinesProps) {
           </h2>
           
           <div className="grid gap-4">
-            {judgments.filter(j => !j.isAppealed).map((judgment) => {
+            {judgments.filter(j => !j.isAppealed && cases.some(c => c.id === j.caseId)).map((judgment) => {
               const c = getJudgmentCase(judgment.caseId);
               const daysLeft = differenceInDays(parseISO(judgment.appealDeadline), new Date());
               const isCritical = daysLeft <= 5;
@@ -125,7 +130,7 @@ export default function LegalDeadlines({ user }: LegalDeadlinesProps) {
               );
             })}
 
-            {judgments.filter(j => !j.isAppealed).length === 0 && (
+            {judgments.filter(j => !j.isAppealed && cases.some(c => c.id === j.caseId)).length === 0 && (
               <div className="text-center py-12 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
                 <CheckCircle2 className="w-12 h-12 text-slate-300 mx-auto mb-3" />
                 <p className="text-slate-400 font-bold">لا توجد مدد استئناف نشطة حالياً</p>

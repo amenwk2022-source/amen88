@@ -1,14 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, query, orderBy, addDoc, doc, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, addDoc, doc, deleteDoc, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { FileText, Upload, Search, Filter, MoreVertical, Trash2, Eye, Download, X, Plus, Check, File, FileImage, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Document, Case } from '../types';
+import { Document, Case, UserProfile } from '../types';
 import { cn } from '../lib/utils';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 
-export default function EDMS() {
+interface EDMSProps {
+  user: UserProfile;
+}
+
+export default function EDMS({ user }: EDMSProps) {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,6 +26,11 @@ export default function EDMS() {
   });
 
   useEffect(() => {
+    let cq = query(collection(db, 'cases'), orderBy('createdAt', 'desc'));
+    if (user.role === 'client') {
+      cq = query(collection(db, 'cases'), where('clientId', '==', user.uid));
+    }
+
     const unsub = onSnapshot(query(collection(db, 'documents'), orderBy('uploadDate', 'desc')), (snapshot) => {
       setDocuments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Document)));
       setLoading(false);
@@ -30,7 +39,7 @@ export default function EDMS() {
       setLoading(false);
     });
 
-    const casesUnsub = onSnapshot(collection(db, 'cases'), (snapshot) => {
+    const casesUnsub = onSnapshot(cq, (snapshot) => {
       setCases(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case)));
     });
 
@@ -38,10 +47,11 @@ export default function EDMS() {
       unsub();
       casesUnsub();
     };
-  }, []);
+  }, [user.uid, user.role]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (user.role === 'client') return;
     try {
       await addDoc(collection(db, 'documents'), {
         ...formData,
@@ -55,6 +65,7 @@ export default function EDMS() {
   };
 
   const handleDelete = async (id: string) => {
+    if (user.role === 'client') return;
     try {
       await deleteDoc(doc(db, 'documents', id));
     } catch (error) {
@@ -62,10 +73,15 @@ export default function EDMS() {
     }
   };
 
-  const filteredDocs = documents.filter(d =>
-    d.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    cases.find(c => c.id === d.caseId)?.caseNumber?.includes(searchTerm)
-  );
+  const filteredDocs = documents.filter(d => {
+    const caseInfo = cases.find(c => c.id === d.caseId);
+    if (!caseInfo) return false; // Filter out docs not belonging to client's cases
+    
+    return d.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+           caseInfo.caseNumber?.includes(searchTerm);
+  });
+
+  const isLawyer = user.role === 'admin' || user.role === 'lawyer';
 
   return (
     <div className="space-y-6 rtl" dir="rtl">
@@ -74,13 +90,15 @@ export default function EDMS() {
           <h1 className="text-2xl font-black text-slate-900 mb-1">الأرشفة الضوئية (EDMS)</h1>
           <p className="text-slate-500 font-medium">إدارة المستندات، صحف الدعاوى، والأحكام إلكترونياً.</p>
         </div>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"
-        >
-          <Upload className="w-5 h-5" />
-          رفع مستند جديد
-        </button>
+        {isLawyer && (
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"
+          >
+            <Upload className="w-5 h-5" />
+            رفع مستند جديد
+          </button>
+        )}
       </div>
 
       {/* Search & Filters */}

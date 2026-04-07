@@ -1,21 +1,38 @@
-import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import React, { useState, useEffect, useRef } from 'react';
+import { collection, onSnapshot, query, orderBy, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { FileText, Download, Printer, Filter, Calendar, Briefcase, Users, TrendingUp, CheckCircle2, AlertCircle } from 'lucide-react';
-import { motion } from 'motion/react';
-import { Case, Client, Session, Finance } from '../types';
+import { FileText, Download, Printer, Filter, Calendar, Briefcase, Users, TrendingUp, CheckCircle2, AlertCircle, Search, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Case, Client, Session, Finance, UserProfile } from '../types';
 import { cn } from '../lib/utils';
-import { format } from 'date-fns';
+import { format, isWithinInterval, parseISO, startOfDay, endOfDay } from 'date-fns';
 import { arSA } from 'date-fns/locale';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
-export default function Reports() {
+interface ReportsProps {
+  user: UserProfile;
+}
+
+export default function Reports({ user }: ReportsProps) {
   const [cases, setCases] = useState<Case[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [finances, setFinances] = useState<Finance[]>([]);
   const [loading, setLoading] = useState(true);
   const [reportType, setReportType] = useState<'cases' | 'finance' | 'clients'>('cases');
+  const [isExporting, setIsExporting] = useState(false);
+  
+  // Filters
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+
+  const reportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (user.role === 'client') return;
+
     const unsubCases = onSnapshot(collection(db, 'cases'), (snapshot) => {
       setCases(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case)));
     }, (err) => {
@@ -45,6 +62,55 @@ export default function Reports() {
     window.print();
   };
 
+  const handleExportPDF = async () => {
+    if (!reportRef.current) return;
+    setIsExporting(true);
+    try {
+      const canvas = await html2canvas(reportRef.current, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff'
+      });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgProps = pdf.getImageProperties(imgData);
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`LoyerOS_Report_${reportType}_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+    } catch (err) {
+      console.error('PDF Export Error:', err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const filterData = (data: any[]) => {
+    return data.filter(item => {
+      const itemDate = item.createdAt ? parseISO(item.createdAt) : null;
+      const matchesDate = (!startDate || !itemDate || itemDate >= startOfDay(parseISO(startDate))) &&
+                          (!endDate || !itemDate || itemDate <= endOfDay(parseISO(endDate)));
+      
+      const searchStr = searchQuery.toLowerCase();
+      const matchesSearch = !searchQuery || 
+                           (item.caseNumber?.toLowerCase().includes(searchStr)) ||
+                           (item.clientName?.toLowerCase().includes(searchStr)) ||
+                           (item.name?.toLowerCase().includes(searchStr)) ||
+                           (item.phone?.toLowerCase().includes(searchStr));
+
+      return matchesDate && matchesSearch;
+    });
+  };
+
+  const filteredCases = filterData(cases);
+  const filteredFinances = filterData(finances.map(f => {
+    const c = cases.find(caseItem => caseItem.id === f.caseId);
+    return { ...f, createdAt: c?.createdAt, clientName: c?.clientName, caseNumber: c?.caseNumber };
+  }));
+  const filteredClients = filterData(clients.map(c => ({ ...c, createdAt: new Date().toISOString() }))); // Clients don't have createdAt yet, using fallback
+
   return (
     <div className="space-y-8 rtl print:p-0" dir="rtl">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden">
@@ -54,18 +120,97 @@ export default function Reports() {
         </div>
         <div className="flex items-center gap-3">
           <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm transition-all border shadow-sm",
+              showFilters ? "bg-indigo-50 border-indigo-200 text-indigo-600" : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+            )}
+          >
+            <Filter className="w-4 h-4" />
+            تصفية
+          </button>
+          <button
             onClick={handlePrint}
             className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl font-bold text-sm hover:bg-slate-50 transition-all shadow-sm"
           >
             <Printer className="w-4 h-4" />
-            طباعة التقرير
+            طباعة
           </button>
-          <button className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100">
-            <Download className="w-4 h-4" />
+          <button 
+            onClick={handleExportPDF}
+            disabled={isExporting}
+            className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 disabled:opacity-50"
+          >
+            {isExporting ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
             تصدير PDF
           </button>
         </div>
       </div>
+
+      {/* Filters Panel */}
+      <AnimatePresence>
+        {showFilters && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden print:hidden"
+          >
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="space-y-2">
+                <label className="text-xs font-black text-slate-500 uppercase">بحث</label>
+                <div className="relative">
+                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="رقم القضية، الموكل..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-10 pl-4 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-600 transition-all"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-black text-slate-500 uppercase">من تاريخ</label>
+                <input
+                  type="date"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-600 transition-all"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-black text-slate-500 uppercase">إلى تاريخ</label>
+                <input
+                  type="date"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-600 transition-all"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                />
+              </div>
+              {(startDate || endDate || searchQuery) && (
+                <div className="md:col-span-3 flex justify-end">
+                  <button
+                    onClick={() => {
+                      setStartDate('');
+                      setEndDate('');
+                      setSearchQuery('');
+                    }}
+                    className="text-xs font-black text-red-600 flex items-center gap-1 hover:underline"
+                  >
+                    <X className="w-3 h-3" />
+                    مسح التصفية
+                  </button>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Report Type Selector */}
       <div className="flex items-center gap-4 border-b border-slate-200 print:hidden">
@@ -93,7 +238,7 @@ export default function Reports() {
       </div>
 
       {/* Report Content */}
-      <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm print:shadow-none print:border-none">
+      <div ref={reportRef} className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm print:shadow-none print:border-none">
         {/* Report Header (Visible in Print) */}
         <div className="hidden print:flex items-center justify-between mb-12 border-b-2 border-slate-900 pb-6">
           <div className="flex items-center gap-4">
@@ -116,15 +261,15 @@ export default function Reports() {
             <div className="grid grid-cols-3 gap-6">
               <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 text-center">
                 <p className="text-slate-500 text-xs font-bold mb-1 uppercase tracking-widest">إجمالي القضايا</p>
-                <h3 className="text-3xl font-black text-slate-900">{cases.length}</h3>
+                <h3 className="text-3xl font-black text-slate-900">{filteredCases.length}</h3>
               </div>
               <div className="p-6 bg-indigo-50 rounded-2xl border border-indigo-100 text-center">
                 <p className="text-indigo-600 text-xs font-bold mb-1 uppercase tracking-widest">قضايا متداولة</p>
-                <h3 className="text-3xl font-black text-indigo-900">{cases.filter(c => c.status === 'active').length}</h3>
+                <h3 className="text-3xl font-black text-indigo-900">{filteredCases.filter(c => c.status === 'active').length}</h3>
               </div>
               <div className="p-6 bg-emerald-50 rounded-2xl border border-emerald-100 text-center">
                 <p className="text-emerald-600 text-xs font-bold mb-1 uppercase tracking-widest">قضايا منتهية</p>
-                <h3 className="text-3xl font-black text-emerald-900">{cases.filter(c => c.status === 'archive').length}</h3>
+                <h3 className="text-3xl font-black text-emerald-900">{filteredCases.filter(c => c.status === 'archive').length}</h3>
               </div>
             </div>
 
@@ -139,7 +284,7 @@ export default function Reports() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {cases.map((c) => (
+                {filteredCases.map((c) => (
                   <tr key={c.id} className="hover:bg-slate-50 transition-colors">
                     <td className="py-4 font-bold text-slate-900">{c.caseNumber || '---'}</td>
                     <td className="py-4 text-slate-600 font-medium">{c.clientName}</td>
@@ -154,7 +299,7 @@ export default function Reports() {
                         {c.status}
                       </span>
                     </td>
-                    <td className="py-4 text-slate-400 text-xs font-bold">{format(new Date(c.createdAt), 'yyyy/MM/dd')}</td>
+                    <td className="py-4 text-slate-400 text-xs font-bold">{c.createdAt ? format(new Date(c.createdAt), 'yyyy/MM/dd') : '---'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -167,15 +312,15 @@ export default function Reports() {
             <div className="grid grid-cols-3 gap-6">
               <div className="p-6 bg-indigo-50 rounded-2xl border border-indigo-100 text-center">
                 <p className="text-indigo-600 text-xs font-bold mb-1 uppercase tracking-widest">إجمالي الأتعاب</p>
-                <h3 className="text-3xl font-black text-indigo-900">{finances.reduce((a, b) => a + b.totalFees, 0).toLocaleString()} د.ك</h3>
+                <h3 className="text-3xl font-black text-indigo-900">{filteredFinances.reduce((a, b) => a + b.totalFees, 0).toLocaleString()} د.ك</h3>
               </div>
               <div className="p-6 bg-emerald-50 rounded-2xl border border-emerald-100 text-center">
                 <p className="text-emerald-600 text-xs font-bold mb-1 uppercase tracking-widest">المبالغ المستلمة</p>
-                <h3 className="text-3xl font-black text-emerald-900">{finances.reduce((a, b) => a + b.receivedAmount, 0).toLocaleString()} د.ك</h3>
+                <h3 className="text-3xl font-black text-emerald-900">{filteredFinances.reduce((a, b) => a + b.receivedAmount, 0).toLocaleString()} د.ك</h3>
               </div>
               <div className="p-6 bg-red-50 rounded-2xl border border-red-100 text-center">
                 <p className="text-red-600 text-xs font-bold mb-1 uppercase tracking-widest">المصروفات</p>
-                <h3 className="text-3xl font-black text-red-900">{finances.reduce((a, b) => a + b.expenses + b.sundries, 0).toLocaleString()} د.ك</h3>
+                <h3 className="text-3xl font-black text-red-900">{filteredFinances.reduce((a, b) => a + b.expenses + b.sundries, 0).toLocaleString()} د.ك</h3>
               </div>
             </div>
 
@@ -190,11 +335,10 @@ export default function Reports() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {finances.map((f) => {
-                  const c = cases.find(caseItem => caseItem.id === f.caseId);
+                {filteredFinances.map((f) => {
                   return (
                     <tr key={f.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="py-4 font-bold text-slate-900">{c?.caseNumber || '---'}</td>
+                      <td className="py-4 font-bold text-slate-900">{f.caseNumber || '---'}</td>
                       <td className="py-4 text-slate-600 font-medium">{f.totalFees.toLocaleString()} د.ك</td>
                       <td className="py-4 text-emerald-600 font-bold">{f.receivedAmount.toLocaleString()} د.ك</td>
                       <td className="py-4 text-red-600 font-bold">{(f.totalFees - f.receivedAmount).toLocaleString()} د.ك</td>
@@ -211,7 +355,7 @@ export default function Reports() {
           <div className="space-y-8">
             <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 text-center max-w-xs mx-auto">
               <p className="text-slate-500 text-xs font-bold mb-1 uppercase tracking-widest">إجمالي الموكلين</p>
-              <h3 className="text-3xl font-black text-slate-900">{clients.length}</h3>
+              <h3 className="text-3xl font-black text-slate-900">{filteredClients.length}</h3>
             </div>
 
             <table className="w-full text-right border-collapse">
@@ -224,7 +368,7 @@ export default function Reports() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {clients.map((client) => (
+                {filteredClients.map((client) => (
                   <tr key={client.id} className="hover:bg-slate-50 transition-colors">
                     <td className="py-4 font-bold text-slate-900">{client.name}</td>
                     <td className="py-4 text-slate-600 font-medium">{client.phone}</td>

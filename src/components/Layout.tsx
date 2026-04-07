@@ -4,6 +4,8 @@ import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { signOut } from 'firebase/auth';
 import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
 import {
+  Calendar,
+  Gavel,
   LayoutDashboard,
   Users,
   Briefcase,
@@ -19,7 +21,8 @@ import {
   Scale,
   ClipboardList,
   TrendingUp,
-  CheckCircle2
+  CheckCircle2,
+  MessageSquare
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -34,16 +37,20 @@ interface LayoutProps {
 
 const navItems = [
   { path: '/', label: 'لوحة التحكم', icon: LayoutDashboard, roles: ['admin', 'lawyer', 'staff', 'client'] },
+  { path: '/calendar', label: 'التقويم', icon: Calendar, roles: ['admin', 'lawyer', 'staff'] },
   { path: '/clients', label: 'الموكلين', icon: Users, roles: ['admin', 'lawyer', 'staff'] },
   { path: '/cases', label: 'القضايا', icon: Briefcase, roles: ['admin', 'lawyer', 'staff', 'client'] },
   { path: '/sessions', label: 'رول الجلسات', icon: CalendarClock, roles: ['admin', 'lawyer', 'staff', 'client'] },
   { path: '/expert-sessions', label: 'جلسات الخبراء', icon: Users, roles: ['admin', 'lawyer', 'staff', 'client'] },
-  { path: '/deadlines', label: 'المواعيد القانونية', icon: Bell, roles: ['admin', 'lawyer', 'staff'] },
-  { path: '/procedures', label: 'الإجراءات', icon: ClipboardList, roles: ['admin', 'lawyer', 'staff'] },
-  { path: '/tasks', label: 'المهام', icon: CheckCircle2, roles: ['admin', 'lawyer', 'staff'] },
+  { path: '/judgments', label: 'الأحكام', icon: Gavel, roles: ['admin', 'lawyer', 'staff', 'client'] },
+  { path: '/deadlines', label: 'المواعيد القانونية', icon: Bell, roles: ['admin', 'lawyer', 'staff', 'client'] },
+  { path: '/procedures', label: 'الإجراءات', icon: ClipboardList, roles: ['admin', 'lawyer', 'staff', 'client'] },
+  { path: '/tasks', label: 'المهام', icon: CheckCircle2, roles: ['admin', 'lawyer', 'staff', 'client'] },
   { path: '/documents', label: 'الأرشيف الضوئي', icon: FileText, roles: ['admin', 'lawyer', 'staff', 'client'] },
-  { path: '/finance', label: 'المالية', icon: DollarSign, roles: ['admin', 'lawyer'] },
+  { path: '/finance', label: 'المالية', icon: DollarSign, roles: ['admin', 'lawyer', 'client'] },
+  { path: '/consultations', label: 'الاستشارات', icon: MessageSquare, roles: ['admin', 'lawyer', 'client'] },
   { path: '/reports', label: 'التقارير', icon: TrendingUp, roles: ['admin', 'lawyer'] },
+  { path: '/settings', label: 'الإعدادات', icon: Settings, roles: ['admin', 'lawyer', 'staff', 'client'] },
 ];
 
 export default function Layout({ children, user }: LayoutProps) {
@@ -51,9 +58,11 @@ export default function Layout({ children, user }: LayoutProps) {
   const [notifCenterOpen, setNotifCenterOpen] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<Case[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
   const [allCases, setAllCases] = useState<Case[]>([]);
+  const [allClients, setAllClients] = useState<any[]>([]);
+  const [allTasks, setAllTasks] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<{ type: 'case' | 'client' | 'task'; id: string; title: string; subtitle: string; extra?: string }[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -77,35 +86,60 @@ export default function Layout({ children, user }: LayoutProps) {
 
     const unsubCases = onSnapshot(collection(db, 'cases'), (snapshot) => {
       const cases = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case));
-      // If client, only show their cases
       if (user?.role === 'client') {
-        const clientCases = cases.filter(c => c.clientId === user.uid || c.clientName === user.name);
-        setAllCases(clientCases);
+        setAllCases(cases.filter(c => c.clientId === user.uid));
       } else {
         setAllCases(cases);
       }
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'cases'));
 
+    const unsubClients = onSnapshot(collection(db, 'clients'), (snapshot) => {
+      setAllClients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'clients'));
+
+    const unsubTasks = onSnapshot(collection(db, 'tasks'), (snapshot) => {
+      setAllTasks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'tasks'));
+
     return () => {
       unsubNotifs();
       unsubCases();
+      unsubClients();
+      unsubTasks();
     };
   }, [user]);
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const q = e.target.value;
+    const q = e.target.value.toLowerCase();
     setSearchQuery(q);
     if (q.length > 1) {
-      const results = allCases.filter(c => 
-        c.caseNumber?.includes(q) || 
-        c.clientName?.includes(q) || 
-        c.autoNumber?.includes(q)
-      ).slice(0, 5);
-      setSearchResults(results);
+      const caseResults = allCases
+        .filter(c => c.caseNumber?.toLowerCase().includes(q) || c.autoNumber?.toLowerCase().includes(q))
+        .map(c => ({ type: 'case' as const, id: c.id, title: `قضية: ${c.caseNumber}`, subtitle: c.clientName || '', extra: c.autoNumber }));
+
+      const clientResults = user?.role !== 'client' 
+        ? allClients
+            .filter(c => c.name?.toLowerCase().includes(q) || c.phone?.toLowerCase().includes(q))
+            .map(c => ({ type: 'client' as const, id: c.id, title: c.name, subtitle: c.phone || '', extra: 'موكل' }))
+        : [];
+
+      const taskResults = allTasks
+        .filter(t => t.title?.toLowerCase().includes(q))
+        .map(t => ({ type: 'task' as const, id: t.id, title: t.title, subtitle: t.status === 'completed' ? 'مكتملة' : 'قيد التنفيذ', extra: 'مهمة' }));
+
+      setSearchResults([...caseResults, ...clientResults, ...taskResults].slice(0, 8));
       setIsSearching(true);
     } else {
       setIsSearching(false);
     }
+  };
+
+  const handleResultClick = (result: any) => {
+    setIsSearching(false);
+    setSearchQuery('');
+    if (result.type === 'case') navigate(`/cases?id=${result.id}`);
+    else if (result.type === 'client') navigate(`/clients?id=${result.id}`);
+    else if (result.type === 'task') navigate(`/tasks?id=${result.id}`);
   };
 
   const handleLogout = async () => {
@@ -123,7 +157,10 @@ export default function Layout({ children, user }: LayoutProps) {
           <div className="p-2 bg-indigo-600 rounded-lg shadow-md">
             <Scale className="w-6 h-6 text-white" />
           </div>
-          <span className="text-xl font-bold text-slate-900 tracking-tight">Loyer OS</span>
+          <div className="flex flex-col">
+            <span className="text-xl font-black text-slate-900 tracking-tight leading-none">الأمين</span>
+            <span className="text-[10px] font-bold text-slate-500 mt-1">مكتب المحامي محمد امين علي الصايغ</span>
+          </div>
         </div>
 
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
@@ -187,8 +224,13 @@ export default function Layout({ children, user }: LayoutProps) {
             >
               <div className="p-6 flex items-center justify-between border-b border-slate-100">
                 <div className="flex items-center gap-3">
-                  <Scale className="w-6 h-6 text-indigo-600" />
-                  <span className="text-xl font-bold text-slate-900">Loyer OS</span>
+                  <div className="p-2 bg-indigo-600 rounded-lg">
+                    <Scale className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-lg font-black text-slate-900">الأمين</span>
+                    <span className="text-[8px] font-bold text-slate-500">مكتب المحامي محمد امين علي الصايغ</span>
+                  </div>
                 </div>
                 <button onClick={() => setSidebarOpen(false)} className="p-2 hover:bg-slate-100 rounded-lg">
                   <X className="w-5 h-5 text-slate-500" />
@@ -261,22 +303,28 @@ export default function Layout({ children, user }: LayoutProps) {
                     className="absolute top-full mt-2 w-full bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden z-50"
                   >
                     <div className="p-2 space-y-1">
-                      {searchResults.map(c => (
+                      {searchResults.map((res, i) => (
                         <button
-                          key={c.id}
-                          onClick={() => {
-                            navigate(`/cases?id=${c.id}`);
-                            setIsSearching(false);
-                            setSearchQuery('');
-                          }}
+                          key={i}
+                          onClick={() => handleResultClick(res)}
                           className="w-full p-3 text-right hover:bg-indigo-50 rounded-xl transition-all flex items-center justify-between group"
                         >
-                          <div>
-                            <p className="text-sm font-black text-slate-900 group-hover:text-indigo-600 transition-colors">{c.caseNumber}</p>
-                            <p className="text-[10px] font-bold text-slate-400">{c.clientName}</p>
+                          <div className="flex items-center gap-3">
+                            <div className={cn(
+                              "w-8 h-8 rounded-lg flex items-center justify-center",
+                              res.type === 'case' ? "bg-indigo-100 text-indigo-600" :
+                              res.type === 'client' ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"
+                            )}>
+                              {res.type === 'case' ? <Briefcase className="w-4 h-4" /> :
+                               res.type === 'client' ? <Users className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+                            </div>
+                            <div>
+                              <p className="text-sm font-black text-slate-900 group-hover:text-indigo-600 transition-colors">{res.title}</p>
+                              <p className="text-[10px] font-bold text-slate-400">{res.subtitle}</p>
+                            </div>
                           </div>
-                          <span className="text-[10px] font-black text-indigo-600 bg-indigo-100 px-2 py-1 rounded-lg">
-                            {c.autoNumber || 'بدون رقم آلي'}
+                          <span className="text-[10px] font-black text-slate-500 bg-slate-100 px-2 py-1 rounded-lg">
+                            {res.extra}
                           </span>
                         </button>
                       ))}

@@ -184,16 +184,32 @@ export async function generateNotifications(userId: string, role: string) {
   const inTwoDays = endOfDay(addDays(today, 2));
 
   try {
+    // Get user's cases if client, otherwise all cases (or relevant ones)
+    let userCaseIds: string[] = [];
+    if (role === 'client') {
+      const casesSnap = await getDocs(query(collection(db, 'cases'), where('clientId', '==', userId)));
+      userCaseIds = casesSnap.docs.map(d => d.id);
+      if (userCaseIds.length === 0) return; // No cases, no notifications
+    }
+
     // 1. Check for upcoming sessions
-    const sessionsSnap = await getDocs(collection(db, 'sessions'));
-    const sessions = sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Session));
+    let sessionsQuery = query(collection(db, 'sessions'));
+    const sessionsSnap = await getDocs(sessionsQuery);
+    const sessions = sessionsSnap.docs
+      .map(d => ({ id: d.id, ...d.data() } as Session))
+      .filter(s => role !== 'client' || userCaseIds.includes(s.caseId));
     
     for (const session of sessions) {
       const sessionDate = parseISO(session.date);
       if (isWithinInterval(sessionDate, { start: today, end: inTwoDays })) {
-        const notifId = `session_${session.id}_${userId}`;
         // Check if already notified
-        const existing = await getDocs(query(collection(db, 'notifications'), where('relatedId', '==', session.id), where('userId', '==', userId)));
+        const existing = await getDocs(query(
+          collection(db, 'notifications'), 
+          where('relatedId', '==', session.id), 
+          where('userId', '==', userId),
+          where('type', '==', 'session')
+        ));
+        
         if (existing.empty) {
           await addDoc(collection(db, 'notifications'), {
             userId,
@@ -210,12 +226,20 @@ export async function generateNotifications(userId: string, role: string) {
 
     // 2. Check for upcoming expert sessions
     const expertSnap = await getDocs(collection(db, 'expertSessions'));
-    const expertSessions = expertSnap.docs.map(d => ({ id: d.id, ...d.data() } as ExpertSession));
+    const expertSessions = expertSnap.docs
+      .map(d => ({ id: d.id, ...d.data() } as ExpertSession))
+      .filter(s => role !== 'client' || userCaseIds.includes(s.caseId));
 
     for (const session of expertSessions) {
       const sessionDate = parseISO(session.date);
       if (isWithinInterval(sessionDate, { start: today, end: inTwoDays })) {
-        const existing = await getDocs(query(collection(db, 'notifications'), where('relatedId', '==', session.id), where('userId', '==', userId)));
+        const existing = await getDocs(query(
+          collection(db, 'notifications'), 
+          where('relatedId', '==', session.id), 
+          where('userId', '==', userId),
+          where('type', '==', 'expert')
+        ));
+        
         if (existing.empty) {
           await addDoc(collection(db, 'notifications'), {
             userId,
@@ -230,7 +254,7 @@ export async function generateNotifications(userId: string, role: string) {
       }
     }
 
-    // 3. Check for tasks assigned to user
+    // 3. Check for tasks assigned to user (Internal only)
     if (role !== 'client') {
       const tasksSnap = await getDocs(query(collection(db, 'tasks'), where('assignedTo', '==', userId), where('status', '!=', 'completed')));
       const tasks = tasksSnap.docs.map(d => ({ id: d.id, ...d.data() } as Task));
@@ -238,7 +262,13 @@ export async function generateNotifications(userId: string, role: string) {
       for (const task of tasks) {
         const dueDate = parseISO(task.dueDate);
         if (isWithinInterval(dueDate, { start: today, end: inTwoDays })) {
-          const existing = await getDocs(query(collection(db, 'notifications'), where('relatedId', '==', task.id), where('userId', '==', userId)));
+          const existing = await getDocs(query(
+            collection(db, 'notifications'), 
+            where('relatedId', '==', task.id), 
+            where('userId', '==', userId),
+            where('type', '==', 'task')
+          ));
+          
           if (existing.empty) {
             await addDoc(collection(db, 'notifications'), {
               userId,
@@ -256,7 +286,9 @@ export async function generateNotifications(userId: string, role: string) {
 
     // 4. Check for legal deadlines (Judgments)
     const judgmentsSnap = await getDocs(collection(db, 'judgments'));
-    const judgments = judgmentsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Judgment));
+    const judgments = judgmentsSnap.docs
+      .map(d => ({ id: d.id, ...d.data() } as Judgment))
+      .filter(j => role !== 'client' || userCaseIds.includes(j.caseId));
 
     for (const judgment of judgments) {
       if (judgment.isAppealed) continue;
@@ -266,14 +298,14 @@ export async function generateNotifications(userId: string, role: string) {
 
       // Notify if deadline is within 7 days
       if (daysLeft <= 7 && daysLeft >= 0) {
-        const existing = await getDocs(query(collection(db, 'notifications'), where('relatedId', '==', judgment.id), where('userId', '==', userId)));
+        const existing = await getDocs(query(
+          collection(db, 'notifications'), 
+          where('relatedId', '==', judgment.id), 
+          where('userId', '==', userId),
+          where('type', '==', 'deadline')
+        ));
+        
         if (existing.empty) {
-          // For clients, only notify if it's their case
-          if (role === 'client') {
-            const caseSnap = await getDoc(doc(db, 'cases', judgment.caseId));
-            if (caseSnap.exists() && caseSnap.data().clientId !== userId) continue;
-          }
-
           await addDoc(collection(db, 'notifications'), {
             userId,
             title: 'اقتراب موعد الاستئناف',

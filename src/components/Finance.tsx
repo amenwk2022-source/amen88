@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, query, orderBy, doc, updateDoc, addDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, doc, updateDoc, addDoc, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { DollarSign, TrendingUp, TrendingDown, CreditCard, PieChart, ArrowUpRight, ArrowDownRight, Plus, Search, Filter, Download, FileText, Check, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Finance, Case } from '../types';
+import { Finance, Case, UserProfile } from '../types';
 import { cn } from '../lib/utils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
-export default function FinanceManagement() {
+interface FinanceManagementProps {
+  user: UserProfile;
+}
+
+export default function FinanceManagement({ user }: FinanceManagementProps) {
   const [finances, setFinances] = useState<Finance[]>([]);
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,6 +26,11 @@ export default function FinanceManagement() {
   });
 
   useEffect(() => {
+    let cq = query(collection(db, 'cases'), orderBy('createdAt', 'desc'));
+    if (user.role === 'client') {
+      cq = query(collection(db, 'cases'), where('clientId', '==', user.uid));
+    }
+
     const unsub = onSnapshot(collection(db, 'finance'), (snapshot) => {
       setFinances(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Finance)));
       setLoading(false);
@@ -30,7 +39,7 @@ export default function FinanceManagement() {
       setLoading(false);
     });
 
-    const casesUnsub = onSnapshot(collection(db, 'cases'), (snapshot) => {
+    const casesUnsub = onSnapshot(cq, (snapshot) => {
       setCases(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case)));
     }, (err) => {
       handleFirestoreError(err, OperationType.LIST, 'cases');
@@ -40,10 +49,11 @@ export default function FinanceManagement() {
       unsub();
       casesUnsub();
     };
-  }, []);
+  }, [user.uid, user.role]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (user.role === 'client') return;
     try {
       if (editingFinance) {
         await updateDoc(doc(db, 'finance', editingFinance.id), formData);
@@ -61,16 +71,20 @@ export default function FinanceManagement() {
     }
   };
 
-  const totalFees = finances.reduce((acc, f) => acc + (f.totalFees || 0), 0);
-  const totalReceived = finances.reduce((acc, f) => acc + (f.receivedAmount || 0), 0);
-  const totalExpenses = finances.reduce((acc, f) => acc + (f.expenses || 0) + (f.sundries || 0), 0);
+  const clientFinances = finances.filter(f => cases.some(c => c.id === f.caseId));
+
+  const totalFees = clientFinances.reduce((acc, f) => acc + (f.totalFees || 0), 0);
+  const totalReceived = clientFinances.reduce((acc, f) => acc + (f.receivedAmount || 0), 0);
+  const totalExpenses = clientFinances.reduce((acc, f) => acc + (f.expenses || 0) + (f.sundries || 0), 0);
   const netProfit = totalReceived - totalExpenses;
 
-  const chartData = finances.slice(0, 6).map(f => ({
+  const chartData = clientFinances.slice(0, 6).map(f => ({
     name: cases.find(c => c.id === f.caseId)?.caseNumber || '---',
     fees: f.totalFees,
     received: f.receivedAmount
   }));
+
+  const isLawyer = user.role === 'admin' || user.role === 'lawyer';
 
   return (
     <div className="space-y-8 rtl" dir="rtl">
@@ -79,17 +93,19 @@ export default function FinanceManagement() {
           <h1 className="text-2xl font-black text-slate-900 mb-1">الإدارة المالية للمكتب</h1>
           <p className="text-slate-500 font-medium">متابعة الأتعاب، الدفعات، والمصروفات القضائية.</p>
         </div>
-        <button
-          onClick={() => {
-            setEditingFinance(null);
-            setFormData({ caseId: '', totalFees: 0, receivedAmount: 0, expenses: 0, sundries: 0 });
-            setIsModalOpen(true);
-          }}
-          className="flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"
-        >
-          <Plus className="w-5 h-5" />
-          إضافة سجل مالي
-        </button>
+        {isLawyer && (
+          <button
+            onClick={() => {
+              setEditingFinance(null);
+              setFormData({ caseId: '', totalFees: 0, receivedAmount: 0, expenses: 0, sundries: 0 });
+              setIsModalOpen(true);
+            }}
+            className="flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"
+          >
+            <Plus className="w-5 h-5" />
+            إضافة سجل مالي
+          </button>
+        )}
       </div>
 
       {/* Stats Grid */}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, limit, orderBy, onSnapshot } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
+import { useNavigate } from 'react-router-dom';
 import {
   Briefcase,
   Users,
@@ -14,7 +15,8 @@ import {
   CheckCircle2,
   FileText,
   Gavel,
-  Bell
+  Bell,
+  MessageSquare
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import {
@@ -32,7 +34,7 @@ import {
   Cell
 } from 'recharts';
 import { cn } from '../lib/utils';
-import { Case, Session, ExpertSession, Judgment, AppNotification, UserProfile } from '../types';
+import { Case, Session, ExpertSession, Judgment, AppNotification, UserProfile, ConsultationRequest } from '../types';
 import { format, parseISO, differenceInDays } from 'date-fns';
 import { arSA } from 'date-fns/locale';
 import ClientPortal from './ClientPortal';
@@ -44,19 +46,25 @@ interface DashboardProps {
 }
 
 export default function Dashboard({ user }: DashboardProps) {
+  const navigate = useNavigate();
   const [stats, setStats] = useState({
     totalCases: 0,
     activeCases: 0,
     wonCases: 0,
     totalClients: 0,
     expertSessions: 0,
+    totalRevenue: 0,
+    pendingPayments: 0,
   });
+  const [chartData, setChartData] = useState<{ name: string; cases: number }[]>([]);
+  const [pieData, setPieData] = useState<{ name: string; value: number }[]>([]);
   const [upcomingSessions, setUpcomingSessions] = useState<Session[]>([]);
   const [upcomingExpertSessions, setUpcomingExpertSessions] = useState<ExpertSession[]>([]);
   const [activeDeadlines, setActiveDeadlines] = useState<Judgment[]>([]);
   const [recentNotifications, setRecentNotifications] = useState<AppNotification[]>([]);
   const [omittedSessions, setOmittedSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pendingConsultations, setPendingConsultations] = useState<ConsultationRequest[]>([]);
 
   useEffect(() => {
     if (user.role === 'client') return;
@@ -64,6 +72,47 @@ export default function Dashboard({ user }: DashboardProps) {
     // Real-time listener for cases
     const casesUnsub = onSnapshot(collection(db, 'cases'), (snapshot) => {
       const cases = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case));
+      
+      // Calculate Pie Chart Data
+      const statusCounts = cases.reduce((acc: any, c) => {
+        const status = c.status || 'active';
+        acc[status] = (acc[status] || 0) + 1;
+        return acc;
+      }, {});
+
+      const statusLabels: any = {
+        'active': 'متداولة',
+        'archive': 'أرشيف',
+        'judgment': 'حكم قضائي',
+        'execution': 'تنفيذ',
+        'draft': 'تحت الرفع'
+      };
+
+      const newPieData = Object.entries(statusCounts).map(([status, count]) => ({
+        name: statusLabels[status] || status,
+        value: Math.round(((count as number) / cases.length) * 100)
+      }));
+      setPieData(newPieData);
+
+      // Calculate Area Chart Data (last 6 months)
+      const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+      const currentMonth = new Date().getMonth();
+      const last6Months = [];
+      for (let i = 5; i >= 0; i--) {
+        const m = (currentMonth - i + 12) % 12;
+        last6Months.push({ name: months[m], cases: 0, monthIndex: m });
+      }
+
+      cases.forEach(c => {
+        if (c.createdAt) {
+          const date = new Date(c.createdAt);
+          const monthIndex = date.getMonth();
+          const chartItem = last6Months.find(item => item.monthIndex === monthIndex);
+          if (chartItem) chartItem.cases++;
+        }
+      });
+      setChartData(last6Months.map(({ name, cases }) => ({ name, cases })));
+
       setStats(prev => ({
         ...prev,
         totalCases: cases.length,
@@ -72,6 +121,13 @@ export default function Dashboard({ user }: DashboardProps) {
         totalClients: new Set(cases.map(c => c.clientId)).size,
       }));
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'cases'));
+
+    // Real-time listener for finance
+    const financeUnsub = onSnapshot(collection(db, 'finance'), (snapshot) => {
+      const records = snapshot.docs.map(doc => doc.data());
+      const totalRevenue = records.reduce((sum, r) => sum + (r.amount || 0), 0);
+      setStats(prev => ({ ...prev, totalRevenue }));
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'finance'));
 
     // Expert Sessions count and upcoming
     const today = new Date().toISOString().split('T')[0];
@@ -131,41 +187,38 @@ export default function Dashboard({ user }: DashboardProps) {
     );
     const omittedUnsub = onSnapshot(omittedQuery, (snapshot) => {
       setOmittedSessions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Session)));
-      setLoading(false);
     }, (err) => {
       handleFirestoreError(err, OperationType.LIST, 'sessions');
-      setLoading(false);
     });
+
+    // Pending Consultations
+    const consultUnsub = onSnapshot(
+      query(collection(db, 'consultations'), where('status', '==', 'pending'), limit(5)),
+      (snapshot) => {
+        setPendingConsultations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ConsultationRequest)));
+        setLoading(false);
+      },
+      (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'consultations');
+        setLoading(false);
+      }
+    );
 
     return () => {
       casesUnsub();
+      financeUnsub();
       expertSessionsUnsub();
       judgmentsUnsub();
       notificationsUnsub();
       sessionsUnsub();
       omittedUnsub();
+      consultUnsub();
     };
   }, [user.role]);
 
   if (user.role === 'client') {
     return <ClientPortal user={user} />;
   }
-
-  const chartData = [
-    { name: 'يناير', cases: 40 },
-    { name: 'فبراير', cases: 30 },
-    { name: 'مارس', cases: 20 },
-    { name: 'أبريل', cases: 27 },
-    { name: 'مايو', cases: 18 },
-    { name: 'يونيو', cases: 23 },
-  ];
-
-  const pieData = [
-    { name: 'تحت الرفع', value: 15 },
-    { name: 'متداولة', value: 45 },
-    { name: 'تنفيذ', value: 25 },
-    { name: 'أرشيف', value: 15 },
-  ];
 
   return (
     <div className="space-y-8 rtl" dir="rtl">
@@ -208,8 +261,8 @@ export default function Dashboard({ user }: DashboardProps) {
         {[
           { label: 'إجمالي القضايا', value: stats.totalCases, icon: Briefcase, color: 'indigo', trend: '+12%' },
           { label: 'قضايا متداولة', value: stats.activeCases, icon: Scale, color: 'amber', trend: '+5%' },
-          { label: 'قضايا منتهية', value: stats.wonCases, icon: CheckCircle2, color: 'emerald', trend: '+8%' },
           { label: 'إجمالي الموكلين', value: stats.totalClients, icon: Users, color: 'blue', trend: '+15%' },
+          { label: 'إجمالي الإيرادات', value: `${stats.totalRevenue.toLocaleString()} د.ك`, icon: TrendingUp, color: 'emerald', trend: '+20%' },
         ].map((stat, i) => (
           <motion.div
             key={i}
@@ -219,7 +272,12 @@ export default function Dashboard({ user }: DashboardProps) {
             className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all group"
           >
             <div className="flex items-center justify-between mb-4">
-              <div className={cn("p-3 rounded-xl group-hover:scale-110 transition-transform", `bg-${stat.color}-50 text-${stat.color}-600`)}>
+              <div className={cn("p-3 rounded-xl group-hover:scale-110 transition-transform", 
+                stat.color === 'indigo' ? "bg-indigo-50 text-indigo-600" :
+                stat.color === 'amber' ? "bg-amber-50 text-amber-600" :
+                stat.color === 'blue' ? "bg-blue-50 text-blue-600" :
+                "bg-emerald-50 text-emerald-600"
+              )}>
                 <stat.icon className="w-6 h-6" />
               </div>
               <div className="flex items-center gap-1 text-emerald-600 text-xs font-bold bg-emerald-50 px-2 py-1 rounded-lg">
@@ -230,6 +288,27 @@ export default function Dashboard({ user }: DashboardProps) {
             <p className="text-slate-500 text-sm font-bold mb-1">{stat.label}</p>
             <h3 className="text-3xl font-black text-slate-900">{stat.value}</h3>
           </motion.div>
+        ))}
+      </div>
+
+      {/* Quick Actions */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: 'إضافة قضية', icon: Briefcase, color: 'bg-indigo-600', path: '/cases' },
+          { label: 'إضافة موكل', icon: Users, color: 'bg-blue-600', path: '/clients' },
+          { label: 'تسجيل جلسة', icon: CalendarClock, color: 'bg-amber-600', path: '/sessions' },
+          { label: 'إضافة مهمة', icon: CheckCircle2, color: 'bg-purple-600', path: '/tasks' },
+        ].map((action, i) => (
+          <button
+            key={i}
+            onClick={() => navigate(action.path)}
+            className="flex items-center gap-3 p-4 bg-white border border-slate-200 rounded-2xl shadow-sm hover:shadow-md hover:border-indigo-200 transition-all group text-right"
+          >
+            <div className={cn("p-2 rounded-lg text-white group-hover:scale-110 transition-transform", action.color)}>
+              <action.icon className="w-5 h-5" />
+            </div>
+            <span className="font-bold text-slate-700 text-sm">{action.label}</span>
+          </button>
         ))}
       </div>
 
@@ -433,6 +512,44 @@ export default function Dashboard({ user }: DashboardProps) {
             ))}
             {recentNotifications.length === 0 && (
               <div className="text-center py-8 text-slate-400 font-medium">لا توجد تنبيهات حديثة</div>
+            )}
+          </div>
+        </div>
+
+        {/* Pending Consultations */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <MessageSquare className="w-5 h-5 text-indigo-600" />
+              استشارات بانتظار الرد
+            </h3>
+            <button 
+              onClick={() => navigate('/consultations')}
+              className="text-indigo-600 text-sm font-bold hover:underline"
+            >
+              عرض الكل
+            </button>
+          </div>
+          <div className="space-y-4">
+            {pendingConsultations.map((req, i) => (
+              <div key={i} className="flex items-center gap-3 p-3 bg-amber-50 rounded-xl border border-amber-100">
+                <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center text-amber-600 shadow-sm">
+                  <MessageSquare className="w-4 h-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold text-slate-900 truncate">{req.subject}</p>
+                  <p className="text-[10px] text-slate-500 font-medium truncate">الموكل: {req.clientName}</p>
+                </div>
+                <button 
+                  onClick={() => navigate('/consultations')}
+                  className="text-[10px] font-black text-indigo-600 hover:underline"
+                >
+                  رد الآن
+                </button>
+              </div>
+            ))}
+            {pendingConsultations.length === 0 && (
+              <div className="text-center py-8 text-slate-400 font-medium">لا توجد استشارات معلقة</div>
             )}
           </div>
         </div>

@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { Plus, Search, MoreVertical, Phone, CreditCard, MapPin, FileText, Trash2, Edit2, X, Check } from 'lucide-react';
+import { Plus, Search, MoreVertical, Phone, CreditCard, MapPin, FileText, Trash2, Edit2, X, Check, Printer, Eye, Scale, Clock, Briefcase } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Client } from '../types';
+import { Client, Case, Session } from '../types';
 import { cn } from '../lib/utils';
+import { format } from 'date-fns';
+import { arSA } from 'date-fns/locale';
 
 export default function ClientManagement() {
   const [clients, setClients] = useState<Client[]>([]);
@@ -12,6 +14,9 @@ export default function ClientManagement() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [selectedClientForCases, setSelectedClientForCases] = useState<Client | null>(null);
+  const [clientCases, setClientCases] = useState<Case[]>([]);
+  const [allSessions, setAllSessions] = useState<Session[]>([]);
   const [formData, setFormData] = useState<Partial<Client>>({
     name: '',
     phone: '',
@@ -29,8 +34,30 @@ export default function ClientManagement() {
       handleFirestoreError(err, OperationType.LIST, 'clients');
       setLoading(false);
     });
-    return unsub;
+
+    const unsubSessions = onSnapshot(collection(db, 'sessions'), (snapshot) => {
+      setAllSessions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Session)));
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'sessions'));
+
+    return () => {
+      unsub();
+      unsubSessions();
+    };
   }, []);
+
+  useEffect(() => {
+    if (!selectedClientForCases) {
+      setClientCases([]);
+      return;
+    }
+
+    const q = query(collection(db, 'cases'), where('clientId', '==', selectedClientForCases.id));
+    const unsub = onSnapshot(q, (snapshot) => {
+      setClientCases(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case)));
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'cases'));
+
+    return unsub;
+  }, [selectedClientForCases]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -161,7 +188,10 @@ export default function ClientManagement() {
             </div>
 
             <div className="mt-6 pt-6 border-t border-slate-100 flex items-center justify-between">
-              <button className="text-indigo-600 text-xs font-black hover:underline flex items-center gap-1">
+              <button 
+                onClick={() => setSelectedClientForCases(client)}
+                className="text-indigo-600 text-xs font-black hover:underline flex items-center gap-1"
+              >
                 عرض القضايا
                 <Plus className="w-3 h-3" />
               </button>
@@ -267,6 +297,166 @@ export default function ClientManagement() {
           </div>
         )}
       </AnimatePresence>
+      
+      {/* Client Cases Modal */}
+      <AnimatePresence>
+        {selectedClientForCases && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedClientForCases(null)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative bg-white w-full max-w-4xl h-[80vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col"
+            >
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-indigo-600 rounded-xl text-white shadow-lg">
+                    <Briefcase className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black text-slate-900">قضايا الموكل: {selectedClientForCases.name}</h2>
+                    <p className="text-sm text-slate-500 font-bold">إجمالي القضايا: {clientCases.length}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => window.print()}
+                    className="flex items-center gap-2 bg-white text-slate-700 px-4 py-2 rounded-xl font-bold text-sm hover:bg-slate-50 transition-all border border-slate-200 shadow-sm"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>طباعة الكشف</span>
+                  </button>
+                  <button onClick={() => setSelectedClientForCases(null)} className="p-2 hover:bg-white rounded-xl transition-all">
+                    <X className="w-6 h-6 text-slate-400" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6">
+                <table className="w-full text-right border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest">#</th>
+                      <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest">المحكمة</th>
+                      <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest">الرقم الآلي</th>
+                      <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest">الخصم</th>
+                      <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest">آخر جلسة</th>
+                      <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest">القرار</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {clientCases.map((c, index) => {
+                      const lastSession = allSessions
+                        .filter(s => s.caseId === c.id)
+                        .sort((a, b) => b.date.localeCompare(a.date))[0];
+                      
+                      return (
+                        <tr key={c.id} className="hover:bg-slate-50/50 transition-colors">
+                          <td className="p-4 text-sm font-black text-slate-400">{index + 1}</td>
+                          <td className="p-4">
+                            <span className="text-sm font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg">
+                              {c.court || '---'}
+                            </span>
+                          </td>
+                          <td className="p-4 text-sm font-black text-slate-900 tracking-widest">{c.autoNumber || '---'}</td>
+                          <td className="p-4 text-sm font-bold text-slate-700">{c.opponent || '---'}</td>
+                          <td className="p-4 text-sm font-bold text-slate-600">{lastSession?.date || '---'}</td>
+                          <td className="p-4">
+                            <p className="text-xs font-medium text-slate-500 line-clamp-2">{lastSession?.decision || '---'}</p>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {clientCases.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="p-20 text-center text-slate-400 font-bold">لا توجد قضايا مسجلة لهذا الموكل</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Print-only Client Cases Section */}
+      {selectedClientForCases && (
+        <div className="hidden print:block p-12 bg-white text-right" dir="rtl">
+          <div className="flex justify-between items-start mb-10 border-b-2 border-slate-900 pb-8">
+            <div>
+              <h1 className="text-2xl font-black text-slate-900">مكتب المحامي محمد امين علي الصايغ</h1>
+              <p className="text-sm text-slate-500 font-bold">للمحاماة والاستشارات القانونية</p>
+              <p className="text-[10px] text-slate-400 mt-1">دولة الكويت - برج التجارية - الدور 25</p>
+            </div>
+            <div className="text-left">
+              <p className="font-bold text-slate-900 text-sm">تاريخ الطباعة: {new Date().toLocaleDateString('ar-EG')}</p>
+              <p className="font-bold text-slate-900 text-sm">الوقت: {new Date().toLocaleTimeString('ar-EG')}</p>
+            </div>
+          </div>
+
+          <div className="text-center mb-10">
+            <h2 className="text-3xl font-black bg-slate-100 inline-block px-12 py-4 rounded-2xl border-2 border-slate-900">
+              كشف بقضايا الموكل
+            </h2>
+            <p className="text-xl font-black mt-4 text-indigo-600">الموكل: {selectedClientForCases.name}</p>
+          </div>
+
+          <table className="w-full border-collapse border-2 border-slate-900">
+            <thead>
+              <tr className="bg-slate-100">
+                <th className="border border-slate-900 p-3 text-right text-sm font-black">#</th>
+                <th className="border border-slate-900 p-3 text-right text-sm font-black">المحكمة</th>
+                <th className="border border-slate-900 p-3 text-right text-sm font-black">الرقم الآلي</th>
+                <th className="border border-slate-900 p-3 text-right text-sm font-black">الخصم</th>
+                <th className="border border-slate-900 p-3 text-right text-sm font-black">آخر جلسة</th>
+                <th className="border border-slate-900 p-3 text-right text-sm font-black">القرار</th>
+              </tr>
+            </thead>
+            <tbody>
+              {clientCases.map((c, index) => {
+                const lastSession = allSessions
+                  .filter(s => s.caseId === c.id)
+                  .sort((a, b) => b.date.localeCompare(a.date))[0];
+                
+                return (
+                  <tr key={c.id}>
+                    <td className="border border-slate-900 p-3 text-sm font-bold text-center">{index + 1}</td>
+                    <td className="border border-slate-900 p-3 text-sm font-bold">{c.court || '---'}</td>
+                    <td className="border border-slate-900 p-3 text-sm font-black">{c.autoNumber || '---'}</td>
+                    <td className="border border-slate-900 p-3 text-sm font-bold">{c.opponent || '---'}</td>
+                    <td className="border border-slate-900 p-3 text-sm font-bold">{lastSession?.date || '---'}</td>
+                    <td className="border border-slate-900 p-3 text-sm leading-relaxed">{lastSession?.decision || '---'}</td>
+                  </tr>
+                );
+              })}
+              {clientCases.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="border border-slate-900 p-10 text-center font-bold">لا توجد قضايا مسجلة</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          <div className="mt-20 flex justify-between items-end">
+            <div className="text-center w-64">
+              <p className="font-black text-lg mb-16 text-slate-900">توقيع الموكل</p>
+              <div className="border-b-2 border-slate-900"></div>
+            </div>
+            <div className="text-center w-64">
+              <p className="font-black text-lg mb-16 text-slate-900">ختم واعتماد المكتب</p>
+              <div className="border-b-2 border-slate-900"></div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

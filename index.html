@@ -4,34 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>My Google AI Studio App</title>
-    <script>
-      (function() {
-        try {
-          var win = window;
-          var desc = Object.getOwnPropertyDescriptor(win, 'fetch');
-          if (!desc) {
-            desc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(win), 'fetch');
-          }
-          if (desc && (desc.get || !desc.writable) && desc.configurable) {
-            var currentFetch = win.fetch;
-            try {
-              Object.defineProperty(win, 'fetch', {
-                get: function() { return currentFetch; },
-                set: function(v) { currentFetch = v; },
-                configurable: true,
-                enumerable: true
-              });
-            } catch (e) {
-              // If defineProperty fails, try deleting and setting
-              try {
-                delete win.fetch;
-                win.fetch = currentFetch;
-              } catch (e2) {}
-            }
-          }
-        } catch (e) {}
-      })();
-    </script>
   </head>
   <body>
     <div id="root"></div>

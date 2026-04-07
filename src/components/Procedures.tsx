@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { Plus, Search, ClipboardList, Clock, User, MessageSquare, Trash2, Edit2, X, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -28,6 +28,11 @@ export default function ProcedureManagement({ user }: ProcedureProps) {
   });
 
   useEffect(() => {
+    let cq = query(collection(db, 'cases'), orderBy('createdAt', 'desc'));
+    if (user?.role === 'client') {
+      cq = query(collection(db, 'cases'), where('clientId', '==', user.uid));
+    }
+
     const q = query(collection(db, 'procedures'), orderBy('date', 'desc'));
     const unsub = onSnapshot(q, (snapshot) => {
       setProcedures(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Procedure)));
@@ -37,7 +42,7 @@ export default function ProcedureManagement({ user }: ProcedureProps) {
       setLoading(false);
     });
 
-    const casesUnsub = onSnapshot(collection(db, 'cases'), (snapshot) => {
+    const casesUnsub = onSnapshot(cq, (snapshot) => {
       setCases(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case)));
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'cases'));
 
@@ -45,9 +50,10 @@ export default function ProcedureManagement({ user }: ProcedureProps) {
       unsub();
       casesUnsub();
     };
-  }, []);
+  }, [user?.uid, user?.role]);
 
   const handleAutoNumberSearch = () => {
+    if (user?.role === 'client') return;
     const foundCase = cases.find(c => c.autoNumber === autoNumberSearch);
     if (foundCase) {
       setFormData({
@@ -65,6 +71,7 @@ export default function ProcedureManagement({ user }: ProcedureProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (user?.role === 'client') return;
     try {
       const data = {
         ...formData,
@@ -88,8 +95,11 @@ export default function ProcedureManagement({ user }: ProcedureProps) {
     }
   };
 
+  const isLawyer = user?.role === 'admin' || user?.role === 'lawyer';
+
   const filteredProcedures = procedures.filter(p => {
     const c = cases.find(caseItem => caseItem.id === p.caseId);
+    if (!c) return false;
     return (
       p.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c?.caseNumber?.includes(searchTerm) ||
@@ -105,34 +115,36 @@ export default function ProcedureManagement({ user }: ProcedureProps) {
           <h1 className="text-2xl font-black text-slate-900 mb-1">إدارة الإجراءات الإدارية</h1>
           <p className="text-slate-500 font-medium">توثيق ومتابعة كافة الإجراءات المتخذة في القضايا.</p>
         </div>
-        <div className="flex gap-2">
-          <div className="relative flex items-center">
-            <input
-              type="text"
-              placeholder="بحث بالرقم الآلي للتنفيذ..."
-              className="bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-indigo-600 outline-none w-64 shadow-sm"
-              value={autoNumberSearch}
-              onChange={(e) => setAutoNumberSearch(e.target.value)}
-            />
-            <button 
-              onClick={handleAutoNumberSearch}
-              className="absolute left-2 bg-indigo-600 text-white p-1.5 rounded-lg hover:bg-indigo-700 transition-all"
+        {isLawyer && (
+          <div className="flex gap-2">
+            <div className="relative flex items-center">
+              <input
+                type="text"
+                placeholder="بحث بالرقم الآلي للتنفيذ..."
+                className="bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-indigo-600 outline-none w-64 shadow-sm"
+                value={autoNumberSearch}
+                onChange={(e) => setAutoNumberSearch(e.target.value)}
+              />
+              <button 
+                onClick={handleAutoNumberSearch}
+                className="absolute left-2 bg-indigo-600 text-white p-1.5 rounded-lg hover:bg-indigo-700 transition-all"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+            <button
+              onClick={() => {
+                setEditingProcedure(null);
+                setFormData({ caseId: '', type: '', notes: '', date: new Date().toISOString().split('T')[0] });
+                setIsModalOpen(true);
+              }}
+              className="flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-5 h-5" />
+              إضافة إجراء جديد
             </button>
           </div>
-          <button
-            onClick={() => {
-              setEditingProcedure(null);
-              setFormData({ caseId: '', type: '', notes: '', date: new Date().toISOString().split('T')[0] });
-              setIsModalOpen(true);
-            }}
-            className="flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"
-          >
-            <Plus className="w-5 h-5" />
-            إضافة إجراء جديد
-          </button>
-        </div>
+        )}
       </div>
 
       {/* Search */}
@@ -196,21 +208,23 @@ export default function ProcedureManagement({ user }: ProcedureProps) {
                   )}
                 </div>
 
-                <div className="flex items-center gap-2 md:border-r md:pr-6 md:border-slate-100">
-                  <button
-                    onClick={() => {
-                      setEditingProcedure(p);
-                      setFormData(p);
-                      setIsModalOpen(true);
-                    }}
-                    className="p-2 hover:bg-indigo-50 text-indigo-600 rounded-lg transition-all"
-                  >
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                  <button className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-all">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+                {isLawyer && (
+                  <div className="flex items-center gap-2 md:border-r md:pr-6 md:border-slate-100">
+                    <button
+                      onClick={() => {
+                        setEditingProcedure(p);
+                        setFormData(p);
+                        setIsModalOpen(true);
+                      }}
+                      className="p-2 hover:bg-indigo-50 text-indigo-600 rounded-lg transition-all"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-all">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
               </div>
             </motion.div>
           );

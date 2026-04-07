@@ -16,7 +16,7 @@ export interface Client {
   poaNumber?: string;
 }
 
-export type CaseStatus = 'pre-filing' | 'active' | 'execution' | 'archive';
+export type CaseStatus = 'pre-filing' | 'active' | 'execution' | 'archive' | 'judgment';
 
 export interface Case {
   id: string;
@@ -78,6 +78,7 @@ export interface Judgment {
   type: 'initial' | 'appeal' | 'cassation';
   result: string;
   appealDeadline: string; // ISO date
+  appealStatus: 'pending' | 'appealed' | 'final';
   isAppealed: boolean;
   notes?: string;
 }
@@ -115,4 +116,27 @@ export interface Task {
   priority: 'low' | 'medium' | 'high';
   caseId?: string;
   createdAt: string;
+}
+
+export interface ConsultationRequest {
+  id: string;
+  clientId: string;
+  clientName: string;
+  subject: string;
+  description: string;
+  status: 'pending' | 'replied' | 'closed';
+  date: string;
+  reply?: string;
+}
+
+export interface SystemSettings {
+  id: string;
+  officeName: string;
+  officeAddress: string;
+  officePhone: string;
+  officeEmail: string;
+  currency: string;
+  caseTypes: string[];
+  courtNames: string[];
+  logoUrl?: string;
 }

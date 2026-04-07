@@ -14,9 +14,13 @@ import FinanceManagement from './components/Finance';
 import EDMS from './components/EDMS';
 import Procedures from './components/Procedures';
 import Reports from './components/Reports';
+import Settings from './components/Settings';
 import LegalDeadlines from './components/LegalDeadlines';
 import ExpertSessions from './components/ExpertSessions';
 import Tasks from './components/Tasks';
+import CalendarView from './components/CalendarView';
+import Judgments from './components/Judgments';
+import Consultations from './components/Consultations';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 export default function App() {
@@ -64,23 +68,27 @@ export default function App() {
     <ErrorBoundary>
       <Router>
         <Routes>
-          <Route path="/admin-dashboard" element={<AdminDashboard />} />
+          {user.role === 'admin' && <Route path="/admin-dashboard" element={<AdminDashboard />} />}
           <Route
             path="*"
             element={
               <Layout user={user}>
                 <Routes>
                   <Route path="/" element={<Dashboard user={user} />} />
-                  <Route path="/clients" element={<ClientManagement />} />
-                  <Route path="/cases" element={<CaseManagement />} />
-                  <Route path="/sessions" element={<SessionRelay />} />
+                  {user.role !== 'client' && <Route path="/clients" element={<ClientManagement />} />}
+                  <Route path="/cases" element={<CaseManagement user={user} />} />
+                  <Route path="/sessions" element={<SessionRelay user={user} />} />
                   <Route path="/procedures" element={<Procedures user={user} />} />
-                  <Route path="/documents" element={<EDMS />} />
-                  <Route path="/finance" element={<FinanceManagement />} />
-                  <Route path="/reports" element={<Reports />} />
+                  <Route path="/documents" element={<EDMS user={user} />} />
+                  <Route path="/finance" element={<FinanceManagement user={user} />} />
+                  {user.role !== 'client' && <Route path="/reports" element={<Reports user={user} />} />}
+                  <Route path="/settings" element={<Settings user={user} />} />
                   <Route path="/deadlines" element={<LegalDeadlines user={user} />} />
                   <Route path="/expert-sessions" element={<ExpertSessions user={user} />} />
                   <Route path="/tasks" element={<Tasks user={user} />} />
+                  <Route path="/calendar" element={<CalendarView user={user} />} />
+                  <Route path="/judgments" element={<Judgments user={user} />} />
+                  <Route path="/consultations" element={<Consultations user={user} />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </Layout>

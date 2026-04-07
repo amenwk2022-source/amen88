@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, query, orderBy, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { ExpertSession, Case, UserProfile } from '../types';
 import { Users, Calendar, MapPin, Search, Plus, X, Save, Trash2, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
@@ -27,6 +27,11 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
   });
 
   useEffect(() => {
+    let cq = query(collection(db, 'cases'), orderBy('createdAt', 'desc'));
+    if (user.role === 'client') {
+      cq = query(collection(db, 'cases'), where('clientId', '==', user.uid));
+    }
+
     const unsubSessions = onSnapshot(
       query(collection(db, 'expertSessions'), orderBy('date', 'desc')), 
       (snapshot) => {
@@ -39,7 +44,7 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
       }
     );
 
-    const unsubCases = onSnapshot(collection(db, 'cases'), (snapshot) => {
+    const unsubCases = onSnapshot(cq, (snapshot) => {
       setCases(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case)));
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'cases'));
 
@@ -47,9 +52,10 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
       unsubSessions();
       unsubCases();
     };
-  }, []);
+  }, [user.uid, user.role]);
 
   const handleAddSession = async () => {
+    if (user.role === 'client') return;
     if (!selectedCase || !formData.date || !formData.expertName) return;
 
     try {
@@ -94,6 +100,7 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
   );
 
   const getSessionCase = (caseId: string) => cases.find(c => c.id === caseId);
+  const isLawyer = user.role === 'admin' || user.role === 'lawyer';
 
   return (
     <div className="space-y-8 rtl pb-20" dir="rtl">
@@ -105,17 +112,19 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
           </h1>
           <p className="text-slate-500 font-bold mt-1">إدارة مواعيد الخبراء والزيارات الميدانية</p>
         </div>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
-        >
-          <Plus className="w-5 h-5" />
-          إضافة جلسة خبير
-        </button>
+        {isLawyer && (
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+          >
+            <Plus className="w-5 h-5" />
+            إضافة جلسة خبير
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {expertSessions.map((session) => {
+        {expertSessions.filter(s => cases.some(c => c.id === s.caseId)).map((session) => {
           const c = getSessionCase(session.caseId);
           const sessionDate = new Date(session.date);
           const isPastSession = isPast(sessionDate) && !isToday(sessionDate);
@@ -142,13 +151,14 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{c?.court}</p>
                   </div>
                 </div>
-                <div className="flex gap-1">
-                  <button onClick={() => deleteSession(session.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-lg transition-all">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+                {isLawyer && (
+                  <div className="flex gap-1">
+                    <button onClick={() => deleteSession(session.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-lg transition-all">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
               </div>
-
               <div className="space-y-3">
                 <div className="flex items-center gap-3 text-sm font-bold text-slate-600">
                   <Calendar className="w-4 h-4 text-slate-400" />
@@ -169,43 +179,64 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
                 )}
               </div>
 
-              <div className="mt-6 pt-6 border-t border-slate-100 flex items-center justify-between">
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => updateStatus(session.id, 'attended')}
-                    className={cn(
-                      "px-3 py-1.5 rounded-lg text-[10px] font-black transition-all",
-                      session.status === 'attended' ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600"
+              {isLawyer && (
+                <div className="mt-6 pt-6 border-t border-slate-100 flex items-center justify-between">
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => updateStatus(session.id, 'attended')}
+                      className={cn(
+                        "px-3 py-1.5 rounded-lg text-[10px] font-black transition-all",
+                        session.status === 'attended' ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600"
+                      )}
+                    >
+                      تم الحضور
+                    </button>
+                    <button
+                      onClick={() => updateStatus(session.id, 'postponed')}
+                      className={cn(
+                        "px-3 py-1.5 rounded-lg text-[10px] font-black transition-all",
+                        session.status === 'postponed' ? "bg-amber-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-amber-50 hover:text-amber-600"
+                      )}
+                    >
+                      تأجيل
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {session.status === 'attended' ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    ) : isPastSession ? (
+                      <AlertCircle className="w-4 h-4 text-red-400" />
+                    ) : (
+                      <Clock className="w-4 h-4 text-indigo-400" />
                     )}
-                  >
-                    تم الحضور
-                  </button>
-                  <button
-                    onClick={() => updateStatus(session.id, 'postponed')}
-                    className={cn(
-                      "px-3 py-1.5 rounded-lg text-[10px] font-black transition-all",
-                      session.status === 'postponed' ? "bg-amber-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-amber-50 hover:text-amber-600"
+                    <span className={cn(
+                      "text-[10px] font-black uppercase",
+                      session.status === 'attended' ? "text-emerald-600" : isPastSession ? "text-red-400" : "text-indigo-400"
+                    )}>
+                      {session.status === 'attended' ? 'تمت' : isPastSession ? 'فائتة' : 'قادمة'}
+                    </span>
+                  </div>
+                </div>
+              )}
+              {!isLawyer && (
+                <div className="mt-6 pt-6 border-t border-slate-100 flex items-center justify-end">
+                  <div className="flex items-center gap-1">
+                    {session.status === 'attended' ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    ) : isPastSession ? (
+                      <AlertCircle className="w-4 h-4 text-red-400" />
+                    ) : (
+                      <Clock className="w-4 h-4 text-indigo-400" />
                     )}
-                  >
-                    تأجيل
-                  </button>
+                    <span className={cn(
+                      "text-[10px] font-black uppercase",
+                      session.status === 'attended' ? "text-emerald-600" : isPastSession ? "text-red-400" : "text-indigo-400"
+                    )}>
+                      {session.status === 'attended' ? 'تمت' : isPastSession ? 'فائتة' : 'قادمة'}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  {session.status === 'attended' ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  ) : isPastSession ? (
-                    <AlertCircle className="w-4 h-4 text-red-400" />
-                  ) : (
-                    <Clock className="w-4 h-4 text-indigo-400" />
-                  )}
-                  <span className={cn(
-                    "text-[10px] font-black uppercase",
-                    session.status === 'attended' ? "text-emerald-600" : isPastSession ? "text-red-400" : "text-indigo-400"
-                  )}>
-                    {session.status === 'attended' ? 'تمت' : isPastSession ? 'فائتة' : 'قادمة'}
-                  </span>
-                </div>
-              </div>
+              )}
             </motion.div>
           );
         })}
