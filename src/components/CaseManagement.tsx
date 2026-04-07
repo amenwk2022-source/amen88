@@ -29,7 +29,11 @@ export default function CaseManagement({ user }: CaseManagementProps) {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<CaseStatus | 'all'>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedTag, setSelectedTag] = useState<string>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isTagPrintModalOpen, setIsTagPrintModalOpen] = useState(false);
+  const [selectedTagForPrint, setSelectedTagForPrint] = useState<string>('');
+  const [allSessions, setAllSessions] = useState<any[]>([]);
   const [editingCase, setEditingCase] = useState<Case | null>(null);
   const [isSessionModalOpen, setIsSessionModalOpen] = useState(false);
   const [isJudgmentModalOpen, setIsJudgmentModalOpen] = useState(false);
@@ -146,12 +150,17 @@ export default function CaseManagement({ user }: CaseManagementProps) {
       setLoading(false);
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'cases'));
 
+    const sessionsUnsub = onSnapshot(collection(db, 'sessions'), (snapshot) => {
+      setAllSessions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'sessions'));
+
     const clientsUnsub = onSnapshot(collection(db, 'clients'), (snapshot) => {
       setClients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Client)));
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'clients'));
 
     return () => {
       unsub();
+      sessionsUnsub();
       clientsUnsub();
     };
   }, [user.uid, user.role]);
@@ -301,13 +310,17 @@ export default function CaseManagement({ user }: CaseManagementProps) {
 
   const filteredCases = cases.filter(c => {
     const matchesTab = activeTab === 'all' || c.status === activeTab;
+    const matchesTag = selectedTag === 'all' || c.tag === selectedTag;
     const matchesSearch = 
       c.caseNumber?.includes(searchTerm) || 
       c.clientName?.includes(searchTerm) || 
       c.autoNumber?.includes(searchTerm) ||
-      c.opponent?.includes(searchTerm);
-    return matchesTab && matchesSearch;
+      c.opponent?.includes(searchTerm) ||
+      c.tag?.includes(searchTerm);
+    return matchesTab && matchesTag && matchesSearch;
   });
+
+  const uniqueTags = Array.from(new Set(cases.map(c => c.tag).filter(Boolean))) as string[];
 
   const timelineEvents = [
     ...caseSessions.map(s => ({ ...s, timelineType: 'session', timelineDate: s.date })),
@@ -325,17 +338,26 @@ export default function CaseManagement({ user }: CaseManagementProps) {
           <p className="text-slate-500 font-medium">تتبع دورة حياة القضايا من التجهيز إلى الأرشفة.</p>
         </div>
         {isLawyer && (
-          <button
-            onClick={() => {
-              setEditingCase(null);
-              setFormData({ clientId: '', status: 'pre-filing' });
-              setIsModalOpen(true);
-            }}
-            className="flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"
-          >
-            <Plus className="w-5 h-5" />
-            إضافة قضية جديدة
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsTagPrintModalOpen(true)}
+              className="flex items-center justify-center gap-2 bg-white text-slate-700 px-6 py-3 rounded-xl font-bold shadow-sm border border-slate-200 hover:bg-slate-50 transition-all"
+            >
+              <Printer className="w-5 h-5" />
+              طباعة تقرير التاج
+            </button>
+            <button
+              onClick={() => {
+                setEditingCase(null);
+                setFormData({ clientId: '', status: 'pre-filing', tag: '' });
+                setIsModalOpen(true);
+              }}
+              className="flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"
+            >
+              <Plus className="w-5 h-5" />
+              إضافة قضية جديدة
+            </button>
+          </div>
         )}
       </div>
 
@@ -343,10 +365,13 @@ export default function CaseManagement({ user }: CaseManagementProps) {
       <div className="flex flex-col lg:flex-row gap-4">
         <div className="flex-1 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap gap-2">
           <button
-            onClick={() => setActiveTab('all')}
+            onClick={() => {
+              setActiveTab('all');
+              setSelectedTag('all');
+            }}
             className={cn(
               "px-6 py-2 rounded-xl text-sm font-bold transition-all",
-              activeTab === 'all' ? "bg-slate-900 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"
+              activeTab === 'all' && selectedTag === 'all' ? "bg-slate-900 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"
             )}
           >
             الكل
@@ -371,6 +396,23 @@ export default function CaseManagement({ user }: CaseManagementProps) {
               </button>
             );
           })}
+          
+          {uniqueTags.length > 0 && (
+            <div className="h-8 w-px bg-slate-200 mx-2 self-center"></div>
+          )}
+          
+          {uniqueTags.map(tag => (
+            <button
+              key={tag}
+              onClick={() => setSelectedTag(tag)}
+              className={cn(
+                "px-4 py-2 rounded-xl text-sm font-bold transition-all",
+                selectedTag === tag ? "bg-indigo-600 text-white shadow-md" : "bg-slate-50 text-slate-500 hover:bg-slate-100"
+              )}
+            >
+              #{tag}
+            </button>
+          ))}
         </div>
         <div className="bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-3 w-full lg:w-80">
           <Search className="w-4 h-4 text-slate-400" />
@@ -415,6 +457,11 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                   <span className="px-2 py-1 bg-slate-100 text-slate-500 text-[10px] font-bold rounded-lg border border-slate-200">
                     {c.caseType || 'نوع غير محدد'}
                   </span>
+                  {c.tag && (
+                    <span className="bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-lg text-[10px] font-black">
+                      #{c.tag}
+                    </span>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm font-medium text-slate-500">
                   <div className="flex items-center gap-2">
@@ -693,6 +740,17 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
                       value={formData.opponent}
                       onChange={(e) => setFormData({ ...formData, opponent: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">التاج (Tag)</label>
+                    <input
+                      type="text"
+                      placeholder="مثال: قضايا_العمال"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                      value={formData.tag}
+                      onChange={(e) => setFormData({ ...formData, tag: e.target.value })}
                     />
                   </div>
 
@@ -1164,6 +1222,118 @@ export default function CaseManagement({ user }: CaseManagementProps) {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Tag Print Modal */}
+      <AnimatePresence>
+        {isTagPrintModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden"
+            >
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <h2 className="text-xl font-black text-slate-900">طباعة تقرير التاج</h2>
+                <button onClick={() => setIsTagPrintModalOpen(false)} className="p-2 hover:bg-white rounded-xl transition-all">
+                  <X className="w-5 h-5 text-slate-400" />
+                </button>
+              </div>
+              <div className="p-8 space-y-6">
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-700">اختر التاج</label>
+                  <select
+                    value={selectedTagForPrint}
+                    onChange={(e) => setSelectedTagForPrint(e.target.value)}
+                    className="w-full p-4 bg-slate-50 border-2 border-transparent rounded-2xl focus:border-indigo-500 focus:bg-white transition-all outline-none font-bold text-sm"
+                  >
+                    <option value="">اختر التاج...</option>
+                    {uniqueTags.map(tag => (
+                      <option key={tag} value={tag}>#{tag}</option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  disabled={!selectedTagForPrint}
+                  onClick={() => {
+                    window.print();
+                    setIsTagPrintModalOpen(false);
+                  }}
+                  className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black text-sm shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  <Printer className="w-5 h-5" />
+                  بدء الطباعة
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Print-only Tag Report Section */}
+      {selectedTagForPrint && (
+        <div className="hidden print:block p-12 bg-white text-right" dir="rtl">
+          <div className="flex justify-between items-start mb-10 border-b-2 border-slate-900 pb-8">
+            <div>
+              <h1 className="text-2xl font-black text-slate-900">مكتب المحامي محمد امين علي الصايغ</h1>
+              <p className="text-sm text-slate-500 font-bold">للمحاماة والاستشارات القانونية</p>
+              <p className="text-[10px] text-slate-400 mt-1">دولة الكويت - برج التجارية - الدور 25</p>
+            </div>
+            <div className="text-left">
+              <p className="font-bold text-slate-900 text-sm">تاريخ الطباعة: {new Date().toLocaleDateString('ar-EG')}</p>
+            </div>
+          </div>
+
+          <div className="text-center mb-10">
+            <h2 className="text-3xl font-black bg-slate-100 inline-block px-12 py-4 rounded-2xl border-2 border-slate-900">
+              تقرير القضايا حسب التاج
+            </h2>
+            <p className="text-xl font-black mt-4 text-indigo-600">التاج: #{selectedTagForPrint}</p>
+          </div>
+
+          <table className="w-full border-collapse border-2 border-slate-900">
+            <thead>
+              <tr className="bg-slate-100">
+                <th className="border border-slate-900 p-3 text-right text-sm font-black">#</th>
+                <th className="border border-slate-900 p-3 text-right text-sm font-black">المحكمة</th>
+                <th className="border border-slate-900 p-3 text-right text-sm font-black">الرقم الآلي</th>
+                <th className="border border-slate-900 p-3 text-right text-sm font-black">الموكل</th>
+                <th className="border border-slate-900 p-3 text-right text-sm font-black">الخصم</th>
+                <th className="border border-slate-900 p-3 text-right text-sm font-black">آخر جلسة</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cases.filter(c => c.tag === selectedTagForPrint).map((c, index) => {
+                const lastSession = allSessions
+                  .filter(s => s.caseId === c.id)
+                  .sort((a, b) => b.date.localeCompare(a.date))[0];
+                
+                return (
+                  <tr key={c.id}>
+                    <td className="border border-slate-900 p-3 text-sm font-bold text-center">{index + 1}</td>
+                    <td className="border border-slate-900 p-3 text-sm font-bold">{c.court || '---'}</td>
+                    <td className="border border-slate-900 p-3 text-sm font-black">{c.autoNumber || '---'}</td>
+                    <td className="border border-slate-900 p-3 text-sm font-bold">{c.clientName || '---'}</td>
+                    <td className="border border-slate-900 p-3 text-sm font-bold">{c.opponent || '---'}</td>
+                    <td className="border border-slate-900 p-3 text-sm font-bold">{lastSession?.date || '---'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          <div className="mt-20 flex justify-between items-end">
+            <div className="text-center w-64">
+              <p className="font-black text-lg mb-16 text-slate-900">توقيع المسؤول</p>
+              <div className="border-b-2 border-slate-900"></div>
+            </div>
+            <div className="text-center w-64">
+              <p className="font-black text-lg mb-16 text-slate-900">ختم واعتماد المكتب</p>
+              <div className="border-b-2 border-slate-900"></div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

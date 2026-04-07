@@ -31,6 +31,7 @@ export interface Case {
   caseType?: string;
   status: CaseStatus;
   lawyerId?: string;
+  tag?: string;
   createdAt: string;
 }
 
