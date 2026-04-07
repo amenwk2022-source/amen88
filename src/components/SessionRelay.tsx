@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, where, getDoc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { CalendarClock, ArrowRightLeft, AlertCircle, CheckCircle2, Clock, Search, Filter, Download, MessageSquare, Save, X, Scale, FileText, ImageIcon, Trash2, Printer, CalendarDays, CheckCircle } from 'lucide-react';
+import { CalendarClock, ArrowRightLeft, AlertCircle, CheckCircle2, Clock, Search, Filter, Download, MessageSquare, Save, X, Scale, FileText, ImageIcon, Trash2, Printer, CalendarDays, CheckCircle, XCircle, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Session, Case, UserProfile } from '../types';
 import { cn } from '../lib/utils';
@@ -24,6 +24,10 @@ export default function SessionRelay({ user }: SessionRelayProps) {
   const [editingSession, setEditingSession] = useState<Session | null>(null);
   const [decision, setDecision] = useState('');
   const [nextDate, setNextDate] = useState('');
+  const [isJudgment, setIsJudgment] = useState(false);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [isAddSessionModalOpen, setIsAddSessionModalOpen] = useState(false);
+  const [selectedCaseId, setSelectedCaseId] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [isRelaying, setIsRelaying] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -60,36 +64,79 @@ export default function SessionRelay({ user }: SessionRelayProps) {
 
   const handleRelay = async () => {
     if (user.role === 'client') return;
-    if (!selectedSession || !decision || !nextDate) {
-      setError('يرجى إدخال القرار وتاريخ الجلسة القادمة');
+    if (!selectedSession || !decision) {
+      setError('يرجى إدخال القرار');
+      return;
+    }
+
+    if (!isJudgment && !nextDate) {
+      setError('يرجى إدخال تاريخ الجلسة القادمة أو تحديد أنها جلسة حكم');
       return;
     }
 
     try {
       setError(null);
       setIsRelaying(true);
+      
       // 1. Update current session with decision
       await updateDoc(doc(db, 'sessions', selectedSession.id), {
         decision,
-        nextDate,
+        nextDate: isJudgment ? '' : nextDate,
         updatedAt: new Date().toISOString()
       });
 
-      // 2. Create new session for the next date (Relay)
-      await addDoc(collection(db, 'sessions'), {
-        caseId: selectedSession.caseId,
-        date: nextDate,
-        decision: '',
-        nextDate: '',
-        lawyerId: selectedSession.lawyerId || '',
-        createdAt: new Date().toISOString()
-      });
+      // 2. If not judgment, create new session for the next date (Relay)
+      if (!isJudgment) {
+        await addDoc(collection(db, 'sessions'), {
+          caseId: selectedSession.caseId,
+          date: nextDate,
+          decision: '',
+          nextDate: '',
+          lawyerId: selectedSession.lawyerId || '',
+          createdAt: new Date().toISOString()
+        });
+      } else {
+        // If judgment, update case status
+        const caseRef = doc(db, 'cases', selectedSession.caseId);
+        await updateDoc(caseRef, {
+          status: 'judgment',
+          updatedAt: new Date().toISOString()
+        });
+      }
 
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
       setIsDecisionModalOpen(false);
       setSelectedSession(null);
       setDecision('');
+      setNextDate('');
+      setIsJudgment(false);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'sessions');
+    } finally {
+      setIsRelaying(false);
+    }
+  };
+
+  const handleAddSession = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCaseId || !nextDate) {
+      setError('يرجى اختيار القضية وتاريخ الجلسة');
+      return;
+    }
+
+    try {
+      setIsRelaying(true);
+      await addDoc(collection(db, 'sessions'), {
+        caseId: selectedCaseId,
+        date: nextDate,
+        decision: '',
+        nextDate: '',
+        lawyerId: user.uid,
+        createdAt: new Date().toISOString()
+      });
+      setIsAddSessionModalOpen(false);
+      setSelectedCaseId('');
       setNextDate('');
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'sessions');
@@ -249,7 +296,9 @@ export default function SessionRelay({ user }: SessionRelayProps) {
     
     if (activeTab === 'today') return sDate === todayStr && courtMatch;
     if (activeTab === 'upcoming') return sDate > todayStr && courtMatch;
-    if (activeTab === 'omitted') return sDate < realTodayStr && !s.decision && courtMatch;
+    if (activeTab === 'omitted') {
+      return sDate < realTodayStr && !s.decision && s.caseInfo?.status === 'active' && courtMatch;
+    }
     if (activeTab === 'search') return sDate === selectedDate && courtMatch;
     return courtMatch;
   });
@@ -318,6 +367,13 @@ export default function SessionRelay({ user }: SessionRelayProps) {
             </select>
 
             <div className="flex gap-2">
+              <button 
+                onClick={() => setIsAddSessionModalOpen(true)}
+                className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-emerald-700 transition-all shadow-sm"
+              >
+                <Plus className="w-4 h-4" />
+                <span>إضافة جلسة</span>
+              </button>
               <button 
                 onClick={() => window.print()}
                 className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-slate-900 transition-all shadow-sm"
@@ -508,6 +564,30 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                         )}
                         
                         <div className="flex items-center gap-3 mt-1 print:hidden">
+                          <button
+                            onClick={() => {
+                              setSelectedSession(session);
+                              setIsHistoryModalOpen(true);
+                            }}
+                            className="flex items-center gap-1 text-[10px] font-black text-slate-600 hover:text-slate-800"
+                          >
+                            <Clock className="w-3 h-3" />
+                            السجل
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (window.confirm('هل أنت متأكد من تجاهل هذه الجلسة؟')) {
+                                updateDoc(doc(db, 'sessions', session.id), {
+                                  decision: 'تم التجاوز',
+                                  updatedAt: new Date().toISOString()
+                                });
+                              }
+                            }}
+                            className="flex items-center gap-1 text-[10px] font-black text-slate-400 hover:text-slate-600"
+                          >
+                            <XCircle className="w-3 h-3" />
+                            تجاهل
+                          </button>
                           <button
                             onClick={() => handleMoveToJudgment(session)}
                             className="flex items-center gap-1 text-[10px] font-black text-indigo-600 hover:text-indigo-800"
@@ -713,16 +793,31 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-slate-700">تاريخ الجلسة القادمة</label>
+                <div className="flex items-center gap-3 p-4 bg-indigo-50 rounded-2xl border border-indigo-100">
                   <input
-                    required
-                    type="date"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
-                    value={nextDate}
-                    onChange={(e) => setNextDate(e.target.value)}
+                    type="checkbox"
+                    id="isJudgment"
+                    className="w-5 h-5 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500"
+                    checked={isJudgment}
+                    onChange={(e) => setIsJudgment(e.target.checked)}
                   />
+                  <label htmlFor="isJudgment" className="text-sm font-bold text-indigo-900 cursor-pointer">
+                    هذه الجلسة هي جلسة حكم (نهائية)
+                  </label>
                 </div>
+
+                {!isJudgment && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">تاريخ الجلسة القادمة</label>
+                    <input
+                      required
+                      type="date"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                      value={nextDate}
+                      onChange={(e) => setNextDate(e.target.value)}
+                    />
+                  </div>
+                )}
 
                 <div className="pt-4 flex gap-4">
                   <button
@@ -744,6 +839,148 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                     إلغاء
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Add Session Modal */}
+      <AnimatePresence>
+        {isAddSessionModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAddSessionModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
+            >
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <h2 className="text-xl font-black text-slate-900">إضافة جلسة جديدة</h2>
+                <button onClick={() => setIsAddSessionModalOpen(false)} className="p-2 hover:bg-white rounded-xl transition-all">
+                  <X className="w-5 h-5 text-slate-400" />
+                </button>
+              </div>
+              <form onSubmit={handleAddSession} className="p-8 space-y-6">
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-700">اختر القضية</label>
+                  <select
+                    required
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                    value={selectedCaseId}
+                    onChange={(e) => setSelectedCaseId(e.target.value)}
+                  >
+                    <option value="">اختر القضية...</option>
+                    {cases.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.caseNumber} / {c.year} - {c.clientName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-700">تاريخ الجلسة</label>
+                  <input
+                    required
+                    type="date"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                    value={nextDate}
+                    onChange={(e) => setNextDate(e.target.value)}
+                  />
+                </div>
+
+                <div className="pt-4 flex gap-4">
+                  <button
+                    type="submit"
+                    disabled={isRelaying}
+                    className="flex-1 bg-indigo-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+                  >
+                    {isRelaying ? (
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <Save className="w-5 h-5" />
+                    )}
+                    إضافة الجلسة
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddSessionModalOpen(false)}
+                    className="px-8 bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl hover:bg-slate-200 transition-all"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* History Modal */}
+      <AnimatePresence>
+        {isHistoryModalOpen && selectedSession && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsHistoryModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
+            >
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <div>
+                  <h2 className="text-xl font-black text-slate-900">سجل جلسات القضية</h2>
+                  <p className="text-xs text-slate-500 font-bold mt-1">
+                    {selectedSession.caseInfo?.caseNumber} / {selectedSession.caseInfo?.year} - {selectedSession.caseInfo?.clientName}
+                  </p>
+                </div>
+                <button onClick={() => setIsHistoryModalOpen(false)} className="p-2 hover:bg-white rounded-xl transition-all">
+                  <X className="w-5 h-5 text-slate-400" />
+                </button>
+              </div>
+              <div className="p-8 overflow-y-auto space-y-6">
+                {sessions
+                  .filter(s => s.caseId === selectedSession.caseId)
+                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                  .map((s, idx) => (
+                    <div key={s.id} className="relative pr-8 border-r-2 border-slate-100 pb-6 last:pb-0">
+                      <div className="absolute top-0 -right-[9px] w-4 h-4 rounded-full bg-white border-4 border-indigo-600" />
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-black text-indigo-600">
+                          {format(new Date(s.date), 'dd MMMM yyyy', { locale: arSA })}
+                        </span>
+                        {s.decision && (
+                          <span className="bg-emerald-100 text-emerald-700 text-[10px] font-black px-2 py-1 rounded-lg">
+                            تم الإنجاز
+                          </span>
+                        )}
+                      </div>
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                        <p className="text-sm text-slate-700 font-bold leading-relaxed">
+                          {s.decision || 'بانتظار القرار...'}
+                        </p>
+                        {s.nextDate && (
+                          <p className="text-xs text-slate-400 font-bold mt-2">
+                            الجلسة القادمة: {format(new Date(s.nextDate), 'yyyy/MM/dd')}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
               </div>
             </motion.div>
           </div>
