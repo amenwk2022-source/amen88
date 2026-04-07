@@ -126,6 +126,13 @@ service cloud.firestore {
       allow delete: if isAdmin() || isLawyer();
     }
 
+    match /consultations/{consultationId} {
+      allow read: if isAuthenticated() && (isAdmin() || isLawyer() || request.auth.uid == resource.data.clientId);
+      allow create: if isAuthenticated() && (isAdmin() || isLawyer() || request.auth.uid == request.resource.data.clientId);
+      allow update: if isAuthenticated() && (isAdmin() || isLawyer());
+      allow delete: if isAdmin();
+    }
+
     match /test/{docId} {
       allow read: if true;
     }

@@ -38,7 +38,13 @@ export default function Auth() {
       // App.tsx will pick up the change via onAuthStateChanged
     } catch (err: any) {
       console.error('Login error:', err);
-      setError('فشل تسجيل الدخول. يرجى المحاولة مرة أخرى أو التأكد من السماح بالنوافذ المنبثقة.');
+      if (err.code === 'auth/unauthorized-domain') {
+        setError('هذا النطاق (Domain) غير مصرح له بتسجيل الدخول في إعدادات Firebase. يرجى إضافة رابط Vercel إلى قائمة Authorized Domains.');
+      } else if (err.code === 'auth/popup-blocked') {
+        setError('تم حظر النافذة المنبثقة. يرجى السماح بالنوافذ المنبثقة لهذا الموقع والمحاولة مرة أخرى.');
+      } else {
+        setError('فشل تسجيل الدخول. يرجى المحاولة مرة أخرى أو التأكد من السماح بالنوافذ المنبثقة.');
+      }
     } finally {
       setLoading(false);
     }
