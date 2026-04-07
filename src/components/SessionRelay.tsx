@@ -5,7 +5,7 @@ import { CalendarClock, ArrowRightLeft, AlertCircle, CheckCircle2, Clock, Search
 import { motion, AnimatePresence } from 'motion/react';
 import { Session, Case, UserProfile } from '../types';
 import { cn } from '../lib/utils';
-import { format, isPast, isToday, isFuture } from 'date-fns';
+import { format, isPast, isToday, isFuture, addDays } from 'date-fns';
 import { arSA } from 'date-fns/locale';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -225,7 +225,16 @@ export default function SessionRelay({ user }: SessionRelayProps) {
     }
   };
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const now = new Date();
+  const day = now.getDay();
+  let effectiveToday = now;
+  
+  // Friday (5) and Saturday (6) are holidays, show Sunday (0)
+  if (day === 5) effectiveToday = addDays(now, 2);
+  else if (day === 6) effectiveToday = addDays(now, 1);
+  
+  const todayStr = effectiveToday.toISOString().split('T')[0];
+  const realTodayStr = now.toISOString().split('T')[0];
   
   const allSessionsWithCase = sessions
     .map(s => ({
@@ -240,14 +249,14 @@ export default function SessionRelay({ user }: SessionRelayProps) {
     
     if (activeTab === 'today') return sDate === todayStr && courtMatch;
     if (activeTab === 'upcoming') return sDate > todayStr && courtMatch;
-    if (activeTab === 'omitted') return sDate < todayStr && !s.decision && courtMatch;
+    if (activeTab === 'omitted') return sDate < realTodayStr && !s.decision && courtMatch;
     if (activeTab === 'search') return sDate === selectedDate && courtMatch;
     return courtMatch;
   });
 
   const courts = ['ALL', ...new Set(cases.map(c => c.court).filter(Boolean))];
 
-  const displayDate = activeTab === 'search' ? new Date(selectedDate) : new Date();
+  const displayDate = activeTab === 'search' ? new Date(selectedDate) : effectiveToday;
 
   const formatDate = (date: Date) => {
     return format(date, 'EEEE, dd MMMM yyyy', { locale: arSA });
@@ -334,7 +343,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
         {[
           { id: 'today', label: 'رول اليوم', icon: Clock, count: sessions.filter(s => s.date.split('T')[0] === todayStr).length },
           { id: 'upcoming', label: 'الجلسات القادمة', icon: CalendarClock, count: sessions.filter(s => s.date.split('T')[0] > todayStr).length },
-          { id: 'omitted', label: 'كاشف السهو', icon: AlertCircle, count: sessions.filter(s => s.date.split('T')[0] < todayStr && !s.decision).length, color: 'red' },
+          { id: 'omitted', label: 'كاشف السهو', icon: AlertCircle, count: sessions.filter(s => s.date.split('T')[0] < realTodayStr && !s.decision).length, color: 'red' },
           { id: 'search', label: 'بحث بالتاريخ', icon: Search, count: 0 },
         ].map((tab) => {
           const Icon = tab.icon;
@@ -365,6 +374,19 @@ export default function SessionRelay({ user }: SessionRelayProps) {
           );
         })}
       </div>
+
+      {/* Holiday Banner */}
+      {(now.getDay() === 5 || now.getDay() === 6) && activeTab === 'today' && (
+        <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex items-center gap-3 mb-6 print:hidden">
+          <div className="p-2 bg-amber-100 rounded-lg text-amber-600">
+            <CalendarDays className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="text-sm font-black text-amber-900">اليوم عطلة رسمية (الجمعة/السبت)</p>
+            <p className="text-xs font-bold text-amber-600">يتم عرض رول يوم الأحد القادم: {format(effectiveToday, 'dd MMMM yyyy', { locale: arSA })}</p>
+          </div>
+        </div>
+      )}
 
       {/* Sessions List - Formal Table */}
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden print:border-slate-900 print:rounded-none">
