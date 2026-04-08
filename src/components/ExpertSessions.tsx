@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, query, orderBy, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { ExpertSession, Case, UserProfile } from '../types';
-import { Users, Calendar, MapPin, Search, Plus, X, Save, Trash2, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Users, Calendar, MapPin, Search, Plus, X, Save, Trash2, CheckCircle2, Clock, AlertCircle, ArrowRight } from 'lucide-react';
 import { format, isPast, isToday, isFuture } from 'date-fns';
 import { arSA } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
@@ -13,6 +14,7 @@ interface ExpertSessionsProps {
 }
 
 export default function ExpertSessions({ user }: ExpertSessionsProps) {
+  const navigate = useNavigate();
   const [expertSessions, setExpertSessions] = useState<ExpertSession[]>([]);
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
@@ -216,10 +218,17 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
                       {session.status === 'attended' ? 'تمت' : isPastSession ? 'فائتة' : 'قادمة'}
                     </span>
                   </div>
+                  <button 
+                    onClick={() => navigate(`/cases?id=${session.caseId}`)}
+                    className="text-indigo-600 text-[10px] font-black hover:underline flex items-center gap-1"
+                  >
+                    تفاصيل القضية
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
                 </div>
               )}
               {!isLawyer && (
-                <div className="mt-6 pt-6 border-t border-slate-100 flex items-center justify-end">
+                <div className="mt-6 pt-6 border-t border-slate-100 flex items-center justify-between">
                   <div className="flex items-center gap-1">
                     {session.status === 'attended' ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -235,6 +244,13 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
                       {session.status === 'attended' ? 'تمت' : isPastSession ? 'فائتة' : 'قادمة'}
                     </span>
                   </div>
+                  <button 
+                    onClick={() => navigate(`/cases?id=${session.caseId}`)}
+                    className="text-indigo-600 text-[10px] font-black hover:underline flex items-center gap-1"
+                  >
+                    تفاصيل القضية
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
                 </div>
               )}
             </motion.div>

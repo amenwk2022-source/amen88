@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { Plus, Search, ClipboardList, Clock, User, MessageSquare, Trash2, Edit2, X, Check } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Search, ClipboardList, Clock, User, MessageSquare, Trash2, Edit2, X, Check, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Procedure, Case, UserProfile } from '../types';
 import { cn } from '../lib/utils';
@@ -13,6 +14,7 @@ interface ProcedureProps {
 }
 
 export default function ProcedureManagement({ user }: ProcedureProps) {
+  const navigate = useNavigate();
   const [procedures, setProcedures] = useState<Procedure[]>([]);
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
@@ -206,6 +208,15 @@ export default function ProcedureManagement({ user }: ProcedureProps) {
                       {p.notes}
                     </div>
                   )}
+                  <div className="flex justify-end">
+                    <button 
+                      onClick={() => navigate(`/cases?id=${p.caseId}`)}
+                      className="text-indigo-600 text-[10px] font-black hover:underline flex items-center gap-1"
+                    >
+                      تفاصيل القضية
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
 
                 {isLawyer && (

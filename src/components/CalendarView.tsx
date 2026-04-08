@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { Calendar as CalendarIcon, ChevronRight, ChevronLeft, Clock, Users, Gavel, CheckCircle2, AlertCircle, Plus, Search, Filter, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Calendar as CalendarIcon, ChevronRight, ChevronLeft, Clock, Users, Gavel, CheckCircle2, AlertCircle, Plus, Search, Filter, X, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Session, ExpertSession, Task, Judgment, Case, UserProfile } from '../types';
 import { cn } from '../lib/utils';
@@ -36,6 +37,7 @@ interface CalendarViewProps {
 }
 
 export default function CalendarView({ user }: CalendarViewProps) {
+  const navigate = useNavigate();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -327,6 +329,15 @@ export default function CalendarView({ user }: CalendarViewProps) {
                           <span className="inline-block mt-2 px-2 py-0.5 rounded-lg bg-white/50 text-[9px] font-black uppercase">
                             {event.status}
                           </span>
+                        )}
+                        {event.caseId && (
+                          <button 
+                            onClick={() => navigate(`/cases?id=${event.caseId}`)}
+                            className="mt-2 text-indigo-600 text-[10px] font-black hover:underline flex items-center gap-1"
+                          >
+                            تفاصيل القضية
+                            <ArrowRight className="w-3 h-3" />
+                          </button>
                         )}
                       </div>
                     </motion.div>

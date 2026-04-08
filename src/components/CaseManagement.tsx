@@ -166,11 +166,15 @@ export default function CaseManagement({ user }: CaseManagementProps) {
   }, [user.uid, user.role]);
 
   useEffect(() => {
-    if (highlightedId && caseRefs.current[highlightedId]) {
-      caseRefs.current[highlightedId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      setActiveTab('all');
+    if (highlightedId && !loading && cases.length > 0) {
+      const targetCase = cases.find(c => c.id === highlightedId);
+      if (targetCase) {
+        setSelectedCaseDetails(targetCase);
+        caseRefs.current[highlightedId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setActiveTab('all');
+      }
     }
-  }, [highlightedId, loading]);
+  }, [highlightedId, loading, cases]);
 
   const handleAddNote = async () => {
     if (!newNote.trim() || !selectedCaseDetails) return;

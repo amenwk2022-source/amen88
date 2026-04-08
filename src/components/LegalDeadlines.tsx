@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, where, orderBy, addDoc, doc, updateDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { Judgment, Case, AppNotification, UserProfile } from '../types';
-import { Gavel, Calendar, Clock, AlertTriangle, CheckCircle2, Bell, ExternalLink } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Gavel, Calendar, Clock, AlertTriangle, CheckCircle2, Bell, ExternalLink, ArrowRight } from 'lucide-react';
 import { format, differenceInDays, parseISO, addDays } from 'date-fns';
 import { arSA } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
@@ -13,6 +14,7 @@ interface LegalDeadlinesProps {
 }
 
 export default function LegalDeadlines({ user }: LegalDeadlinesProps) {
+  const navigate = useNavigate();
   const [judgments, setJudgments] = useState<Judgment[]>([]);
   const [cases, setCases] = useState<Case[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -116,7 +118,7 @@ export default function LegalDeadlines({ user }: LegalDeadlinesProps) {
                       </div>
                     </div>
 
-                    <div className="text-left">
+                    <div className="text-left flex flex-col items-end gap-4">
                       <div className={cn(
                         "w-20 h-20 rounded-2xl flex flex-col items-center justify-center border-2",
                         isCritical ? "bg-red-600 border-red-700 text-white shadow-lg shadow-red-100" : "bg-white border-slate-100 text-slate-900"
@@ -124,6 +126,13 @@ export default function LegalDeadlines({ user }: LegalDeadlinesProps) {
                         <span className="text-2xl font-black">{daysLeft < 0 ? 0 : daysLeft}</span>
                         <span className="text-[10px] font-bold uppercase">يوم متبقي</span>
                       </div>
+                      <button 
+                        onClick={() => navigate(`/cases?id=${judgment.caseId}`)}
+                        className="text-indigo-600 text-[10px] font-black hover:underline flex items-center gap-1"
+                      >
+                        تفاصيل القضية
+                        <ArrowRight className="w-3 h-3" />
+                      </button>
                     </div>
                   </div>
                 </motion.div>

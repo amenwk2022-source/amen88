@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, orderBy, addDoc, doc, updateDoc, deleteDoc, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
+import { useNavigate } from 'react-router-dom';
 import { Scale, Calendar, AlertCircle, CheckCircle2, Plus, Search, Filter, Trash2, Edit2, X, Check, ArrowRight, Gavel } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Judgment, Case, UserProfile } from '../types';
@@ -13,6 +14,7 @@ interface JudgmentsProps {
 }
 
 export default function Judgments({ user }: JudgmentsProps) {
+  const navigate = useNavigate();
   const [judgments, setJudgments] = useState<Judgment[]>([]);
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
@@ -243,7 +245,10 @@ export default function Judgments({ user }: JudgmentsProps) {
                       </span>
                     )}
                   </div>
-                  <button className="text-indigo-600 text-[10px] font-black hover:underline flex items-center gap-1">
+                  <button 
+                    onClick={() => navigate(`/cases?id=${judgment.caseId}`)}
+                    className="text-indigo-600 text-[10px] font-black hover:underline flex items-center gap-1"
+                  >
                     تفاصيل القضية
                     <ArrowRight className="w-3 h-3" />
                   </button>

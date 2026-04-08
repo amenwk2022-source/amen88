@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, where, getDoc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { CalendarClock, ArrowRightLeft, AlertCircle, CheckCircle2, Clock, Search, Filter, Download, MessageSquare, Save, X, Scale, FileText, ImageIcon, Trash2, Printer, CalendarDays, CheckCircle, XCircle, Plus, Edit2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { CalendarClock, ArrowRightLeft, AlertCircle, CheckCircle2, Clock, Search, Filter, Download, MessageSquare, Save, X, Scale, FileText, ImageIcon, Trash2, Printer, CalendarDays, CheckCircle, XCircle, Plus, Edit2, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Session, Case, UserProfile } from '../types';
 import { cn } from '../lib/utils';
@@ -15,6 +16,7 @@ interface SessionRelayProps {
 }
 
 export default function SessionRelay({ user }: SessionRelayProps) {
+  const navigate = useNavigate();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
@@ -687,6 +689,13 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                           >
                             <Trash2 className="w-3 h-3" />
                             حذف
+                          </button>
+                          <button 
+                            onClick={() => navigate(`/cases?id=${session.caseId}`)}
+                            className="flex items-center gap-1 text-[10px] font-black text-indigo-600 hover:underline"
+                          >
+                            <ArrowRight className="w-3 h-3" />
+                            تفاصيل القضية
                           </button>
                         </div>
                       </div>

@@ -250,7 +250,10 @@ export default function Dashboard({ user }: DashboardProps) {
             <h3 className="text-red-900 font-bold">تنبيه: كاشف السهو (Anti-Omission)</h3>
             <p className="text-red-700 text-sm font-medium">يوجد {omittedSessions.length} جلسة منتهية لم يتم ترحيل قراراتها بعد. يرجى تحديثها فوراً.</p>
           </div>
-          <button className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold text-sm hover:bg-red-700 transition-all shadow-md shadow-red-100">
+          <button 
+            onClick={() => navigate('/sessions')}
+            className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold text-sm hover:bg-red-700 transition-all shadow-md shadow-red-100"
+          >
             تحديث الآن
           </button>
         </motion.div>
