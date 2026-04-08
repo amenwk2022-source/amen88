@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, where, getDoc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { CalendarClock, ArrowRightLeft, AlertCircle, CheckCircle2, Clock, Search, Filter, Download, MessageSquare, Save, X, Scale, FileText, ImageIcon, Trash2, Printer, CalendarDays, CheckCircle, XCircle, Plus } from 'lucide-react';
+import { CalendarClock, ArrowRightLeft, AlertCircle, CheckCircle2, Clock, Search, Filter, Download, MessageSquare, Save, X, Scale, FileText, ImageIcon, Trash2, Printer, CalendarDays, CheckCircle, XCircle, Plus, Edit2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Session, Case, UserProfile } from '../types';
 import { cn } from '../lib/utils';
@@ -27,7 +27,9 @@ export default function SessionRelay({ user }: SessionRelayProps) {
   const [isJudgment, setIsJudgment] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isAddSessionModalOpen, setIsAddSessionModalOpen] = useState(false);
+  const [isEditSessionModalOpen, setIsEditSessionModalOpen] = useState(false);
   const [selectedCaseId, setSelectedCaseId] = useState<string>('');
+  const [editDate, setEditDate] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isRelaying, setIsRelaying] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -138,6 +140,26 @@ export default function SessionRelay({ user }: SessionRelayProps) {
       setIsAddSessionModalOpen(false);
       setSelectedCaseId('');
       setNextDate('');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'sessions');
+    } finally {
+      setIsRelaying(false);
+    }
+  };
+
+  const handleEditSession = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSession || !editDate) return;
+
+    try {
+      setIsRelaying(true);
+      await updateDoc(doc(db, 'sessions', selectedSession.id), {
+        date: editDate,
+        updatedAt: new Date().toISOString()
+      });
+      setIsEditSessionModalOpen(false);
+      setSelectedSession(null);
+      setEditDate('');
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'sessions');
     } finally {
@@ -307,12 +329,65 @@ export default function SessionRelay({ user }: SessionRelayProps) {
 
   const displayDate = activeTab === 'search' ? new Date(selectedDate) : effectiveToday;
 
+  const stats = {
+    today: sessions.filter(s => s.date.split('T')[0] === todayStr).length,
+    upcoming: sessions.filter(s => s.date.split('T')[0] > todayStr).length,
+    omitted: sessions.filter(s => s.date.split('T')[0] < realTodayStr && !s.decision && s.caseInfo?.status === 'active').length,
+  };
+
   const formatDate = (date: Date) => {
     return format(date, 'EEEE, dd MMMM yyyy', { locale: arSA });
   };
 
   return (
     <div className="space-y-6 rtl pb-20" dir="rtl">
+      {/* Quick Stats Bar */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 print:hidden">
+        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-4">
+          <div className="p-3 bg-indigo-100 text-indigo-600 rounded-2xl">
+            <CalendarDays className="w-6 h-6" />
+          </div>
+          <div>
+            <p className="text-xs font-black text-slate-400 uppercase">جلسات اليوم</p>
+            <p className="text-2xl font-black text-slate-900">{stats.today}</p>
+          </div>
+        </div>
+        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-4">
+          <div className="p-3 bg-emerald-100 text-emerald-600 rounded-2xl">
+            <CalendarClock className="w-6 h-6" />
+          </div>
+          <div>
+            <p className="text-xs font-black text-slate-400 uppercase">الجلسات القادمة</p>
+            <p className="text-2xl font-black text-slate-900">{stats.upcoming}</p>
+          </div>
+        </div>
+        <div className={cn(
+          "p-6 rounded-3xl border shadow-sm flex items-center gap-4 transition-all",
+          stats.omitted > 0 ? "bg-red-50 border-red-100" : "bg-white border-slate-200"
+        )}>
+          <div className={cn(
+            "p-3 rounded-2xl",
+            stats.omitted > 0 ? "bg-red-100 text-red-600" : "bg-slate-100 text-slate-400"
+          )}>
+            <AlertCircle className="w-6 h-6" />
+          </div>
+          <div>
+            <p className="text-xs font-black text-slate-400 uppercase">جلسات لم يتم ترحيلها</p>
+            <p className={cn("text-2xl font-black", stats.omitted > 0 ? "text-red-600" : "text-slate-900")}>
+              {stats.omitted}
+            </p>
+          </div>
+          {stats.omitted > 0 && (
+            <button 
+              onClick={() => setActiveTab('omitted')}
+              className="mr-auto text-xs font-black text-red-600 underline"
+            >
+              عرض الكل
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Success Message */}
       <AnimatePresence>
         {success && (
@@ -564,6 +639,17 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                         )}
                         
                         <div className="flex items-center gap-3 mt-1 print:hidden">
+                          <button
+                            onClick={() => {
+                              setSelectedSession(session);
+                              setEditDate(session.date.split('T')[0]);
+                              setIsEditSessionModalOpen(true);
+                            }}
+                            className="flex items-center gap-1 text-[10px] font-black text-slate-600 hover:text-slate-800"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                            تعديل
+                          </button>
                           <button
                             onClick={() => {
                               setSelectedSession(session);
@@ -924,6 +1010,68 @@ export default function SessionRelay({ user }: SessionRelayProps) {
         )}
       </AnimatePresence>
 
+      {/* Edit Session Modal */}
+      <AnimatePresence>
+        {isEditSessionModalOpen && selectedSession && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsEditSessionModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
+            >
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <h2 className="text-xl font-black text-slate-900">تعديل موعد الجلسة</h2>
+                <button onClick={() => setIsEditSessionModalOpen(false)} className="p-2 hover:bg-white rounded-xl transition-all">
+                  <X className="w-5 h-5 text-slate-400" />
+                </button>
+              </div>
+              <form onSubmit={handleEditSession} className="p-8 space-y-6">
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-700">تاريخ الجلسة الجديد</label>
+                  <input
+                    required
+                    type="date"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                    value={editDate}
+                    onChange={(e) => setEditDate(e.target.value)}
+                  />
+                </div>
+
+                <div className="pt-4 flex gap-4">
+                  <button
+                    type="submit"
+                    disabled={isRelaying}
+                    className="flex-1 bg-indigo-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+                  >
+                    {isRelaying ? (
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <Save className="w-5 h-5" />
+                    )}
+                    حفظ التعديل
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditSessionModalOpen(false)}
+                    className="px-8 bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl hover:bg-slate-200 transition-all"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* History Modal */}
       <AnimatePresence>
         {isHistoryModalOpen && selectedSession && (
@@ -963,10 +1111,23 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                         <span className="text-sm font-black text-indigo-600">
                           {format(new Date(s.date), 'dd MMMM yyyy', { locale: arSA })}
                         </span>
-                        {s.decision && (
+                        {s.decision ? (
                           <span className="bg-emerald-100 text-emerald-700 text-[10px] font-black px-2 py-1 rounded-lg">
                             تم الإنجاز
                           </span>
+                        ) : (
+                          user.role !== 'client' && (
+                            <button
+                              onClick={() => {
+                                setSelectedSession(s);
+                                setIsDecisionModalOpen(true);
+                                setIsHistoryModalOpen(false);
+                              }}
+                              className="bg-indigo-600 text-white text-[10px] font-black px-3 py-1 rounded-lg hover:bg-indigo-700 transition-all"
+                            >
+                              إضافة قرار
+                            </button>
+                          )
                         )}
                       </div>
                       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
