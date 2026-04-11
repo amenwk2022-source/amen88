@@ -85,5 +85,43 @@ body {
     .print\:shadow-none {
       box-shadow: none !important;
     }
+    /* Hide all UI elements that are not meant for printing */
+    .print\:hidden, 
+    aside, 
+    header, 
+    nav, 
+    button, 
+    .no-print,
+    .fixed,
+    .sticky {
+      display: none !important;
+    }
+    
+    /* Reset layout for printing */
+    #root, body, html {
+      height: auto !important;
+      overflow: visible !important;
+      background: white !important;
+    }
+
+    main {
+      margin: 0 !important;
+      padding: 0 !important;
+      display: block !important;
+      overflow: visible !important;
+      width: 100% !important;
+    }
+
+    /* Ensure the print content is visible and takes full width */
+    .print\:block {
+      display: block !important;
+      width: 100% !important;
+      position: relative !important;
+    }
+
+    /* Fix for nested containers that might have overflow */
+    div {
+      overflow: visible !important;
+    }
   }
 }

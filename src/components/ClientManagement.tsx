@@ -102,6 +102,17 @@ export default function ClientManagement() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.name) return;
+
+    // Check for duplicate name if adding a new client
+    if (!editingClient) {
+      const isDuplicate = clients.some(c => c.name.trim() === formData.name?.trim());
+      if (isDuplicate) {
+        alert('هذا الموكل موجود بالفعل في النظام.');
+        return;
+      }
+    }
+
     try {
       if (editingClient) {
         await updateDoc(doc(db, 'clients', editingClient.id), formData);

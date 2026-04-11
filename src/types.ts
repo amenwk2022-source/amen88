@@ -92,8 +92,10 @@ export interface ExpertSession {
   time?: string;
   expertName: string;
   officeLocation: string;
-  status: 'pending' | 'attended' | 'postponed';
+  status: 'pending' | 'attended' | 'postponed' | 'reserved_for_report';
   notes?: string;
+  nextDate?: string;
+  decision?: string;
   caseInfo?: Partial<Case>;
 }
 

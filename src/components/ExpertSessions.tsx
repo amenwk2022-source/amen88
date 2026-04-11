@@ -21,6 +21,16 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
+  const [followUpModal, setFollowUpModal] = useState<{ isOpen: boolean; session: ExpertSession | null }>({
+    isOpen: false,
+    session: null
+  });
+  const [followUpData, setFollowUpData] = useState({
+    nextDate: '',
+    nextTime: '',
+    decision: '',
+    isReserved: false
+  });
   const [formData, setFormData] = useState({
     date: '',
     time: '',
@@ -82,7 +92,46 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
 
   const updateStatus = async (id: string, status: ExpertSession['status']) => {
     try {
+      if (status === 'attended') {
+        const session = expertSessions.find(s => s.id === id);
+        if (session) {
+          setFollowUpModal({ isOpen: true, session });
+          return;
+        }
+      }
       await updateDoc(doc(db, 'expertSessions', id), { status });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'expertSessions');
+    }
+  };
+
+  const handleFollowUp = async () => {
+    if (!followUpModal.session) return;
+    try {
+      const updates: any = {
+        status: followUpData.isReserved ? 'reserved_for_report' : 'attended',
+        decision: followUpData.decision,
+        updatedAt: new Date().toISOString()
+      };
+
+      if (!followUpData.isReserved && followUpData.nextDate) {
+        updates.nextDate = followUpData.nextDate;
+        // Optionally create a new pending session automatically
+        await addDoc(collection(db, 'expertSessions'), {
+          caseId: followUpModal.session.caseId,
+          date: followUpData.nextDate,
+          time: followUpData.nextTime,
+          expertName: followUpModal.session.expertName,
+          officeLocation: followUpModal.session.officeLocation,
+          status: 'pending',
+          notes: `جلسة تابعة للجلسة المنعقدة بتاريخ ${followUpModal.session.date}`,
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      await updateDoc(doc(db, 'expertSessions', followUpModal.session.id), updates);
+      setFollowUpModal({ isOpen: false, session: null });
+      setFollowUpData({ nextDate: '', nextTime: '', decision: '', isReserved: false });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'expertSessions');
     }
@@ -195,10 +244,10 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
                       onClick={() => updateStatus(session.id, 'attended')}
                       className={cn(
                         "px-3 py-1.5 rounded-lg text-[10px] font-black transition-all",
-                        session.status === 'attended' ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600"
+                        (session.status === 'attended' || session.status === 'reserved_for_report') ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600"
                       )}
                     >
-                      تم الحضور
+                      {session.status === 'reserved_for_report' ? 'محجوز للتقرير' : 'تم الحضور'}
                     </button>
                     <button
                       onClick={() => updateStatus(session.id, 'postponed')}
@@ -211,7 +260,7 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
                     </button>
                   </div>
                   <div className="flex items-center gap-1">
-                    {session.status === 'attended' ? (
+                    {session.status === 'attended' || session.status === 'reserved_for_report' ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                     ) : isPastSession ? (
                       <AlertCircle className="w-4 h-4 text-red-400" />
@@ -220,11 +269,17 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
                     )}
                     <span className={cn(
                       "text-[10px] font-black uppercase",
-                      session.status === 'attended' ? "text-emerald-600" : isPastSession ? "text-red-400" : "text-indigo-400"
+                      (session.status === 'attended' || session.status === 'reserved_for_report') ? "text-emerald-600" : isPastSession ? "text-red-400" : "text-indigo-400"
                     )}>
-                      {session.status === 'attended' ? 'تمت' : isPastSession ? 'فائتة' : 'قادمة'}
+                      {session.status === 'reserved_for_report' ? 'محجوز للتقرير' : session.status === 'attended' ? 'تمت' : isPastSession ? 'فائتة' : 'قادمة'}
                     </span>
                   </div>
+                  {session.nextDate && (
+                    <div className="flex items-center gap-1 bg-indigo-50 px-2 py-1 rounded-lg">
+                      <Calendar className="w-3 h-3 text-indigo-600" />
+                      <span className="text-[10px] font-black text-indigo-600">القادمة: {session.nextDate}</span>
+                    </div>
+                  )}
                   <button 
                     onClick={() => navigate(`/cases?id=${session.caseId}`)}
                     className="text-indigo-600 text-[10px] font-black hover:underline flex items-center gap-1"
@@ -237,7 +292,7 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
               {!isLawyer && (
                 <div className="mt-6 pt-6 border-t border-slate-100 flex items-center justify-between">
                   <div className="flex items-center gap-1">
-                    {session.status === 'attended' ? (
+                    {session.status === 'attended' || session.status === 'reserved_for_report' ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                     ) : isPastSession ? (
                       <AlertCircle className="w-4 h-4 text-red-400" />
@@ -246,11 +301,17 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
                     )}
                     <span className={cn(
                       "text-[10px] font-black uppercase",
-                      session.status === 'attended' ? "text-emerald-600" : isPastSession ? "text-red-400" : "text-indigo-400"
+                      (session.status === 'attended' || session.status === 'reserved_for_report') ? "text-emerald-600" : isPastSession ? "text-red-400" : "text-indigo-400"
                     )}>
-                      {session.status === 'attended' ? 'تمت' : isPastSession ? 'فائتة' : 'قادمة'}
+                      {session.status === 'reserved_for_report' ? 'محجوز للتقرير' : session.status === 'attended' ? 'تمت' : isPastSession ? 'فائتة' : 'قادمة'}
                     </span>
                   </div>
+                  {session.nextDate && (
+                    <div className="flex items-center gap-1 bg-indigo-50 px-2 py-1 rounded-lg">
+                      <Calendar className="w-3 h-3 text-indigo-600" />
+                      <span className="text-[10px] font-black text-indigo-600">القادمة: {session.nextDate}</span>
+                    </div>
+                  )}
                   <button 
                     onClick={() => navigate(`/cases?id=${session.caseId}`)}
                     className="text-indigo-600 text-[10px] font-black hover:underline flex items-center gap-1"
@@ -264,6 +325,108 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
           );
         })}
       </div>
+
+      {/* Follow-up Modal */}
+      <AnimatePresence>
+        {followUpModal.isOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setFollowUpModal({ isOpen: false, session: null })}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
+            >
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <h2 className="text-xl font-black text-slate-900">متابعة جلسة الخبير</h2>
+                <button onClick={() => setFollowUpModal({ isOpen: false, session: null })} className="p-2 hover:bg-white rounded-xl transition-all">
+                  <X className="w-5 h-5 text-slate-400" />
+                </button>
+              </div>
+              <div className="p-8 space-y-6">
+                <div className="flex p-1 bg-slate-100 rounded-2xl">
+                  <button
+                    onClick={() => setFollowUpData({ ...followUpData, isReserved: false })}
+                    className={cn(
+                      "flex-1 py-3 rounded-xl text-sm font-black transition-all",
+                      !followUpData.isReserved ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500"
+                    )}
+                  >
+                    جلسة قادمة
+                  </button>
+                  <button
+                    onClick={() => setFollowUpData({ ...followUpData, isReserved: true })}
+                    className={cn(
+                      "flex-1 py-3 rounded-xl text-sm font-black transition-all",
+                      followUpData.isReserved ? "bg-white text-emerald-600 shadow-sm" : "text-slate-500"
+                    )}
+                  >
+                    حجز للتقرير
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">ما تم في الجلسة / القرار</label>
+                    <textarea
+                      rows={3}
+                      placeholder="اكتب ما تم في الجلسة..."
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 transition-all"
+                      value={followUpData.decision}
+                      onChange={(e) => setFollowUpData({ ...followUpData, decision: e.target.value })}
+                    />
+                  </div>
+
+                  {!followUpData.isReserved && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-bold text-slate-700">تاريخ الجلسة القادمة</label>
+                        <input
+                          type="date"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 transition-all"
+                          value={followUpData.nextDate}
+                          onChange={(e) => setFollowUpData({ ...followUpData, nextDate: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-bold text-slate-700">الساعة</label>
+                        <input
+                          type="time"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 transition-all"
+                          value={followUpData.nextTime}
+                          onChange={(e) => setFollowUpData({ ...followUpData, nextTime: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-4 flex gap-4">
+                  <button
+                    onClick={handleFollowUp}
+                    className="flex-1 bg-indigo-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+                  >
+                    <CheckCircle2 className="w-5 h-5" />
+                    تأكيد وحفظ
+                  </button>
+                  <button
+                    onClick={() => setFollowUpModal({ isOpen: false, session: null })}
+                    className="px-8 bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl hover:bg-slate-200 transition-all"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Add Session Modal */}
       <AnimatePresence>

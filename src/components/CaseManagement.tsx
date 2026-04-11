@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { Plus, Search, Filter, Briefcase, Scale, Gavel, Archive, MoreVertical, Trash2, Edit2, X, Check, ArrowLeftRight, CalendarPlus, FileCheck, DollarSign, Clock, FileText, Eye, CheckCircle2, Printer } from 'lucide-react';
+import { Plus, Search, Filter, Briefcase, Scale, Gavel, Archive, MoreVertical, Trash2, Edit2, X, Check, ArrowLeftRight, CalendarPlus, FileCheck, DollarSign, Clock, FileText, Eye, CheckCircle2, Printer, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Case, CaseStatus, Client, Judgment, UserProfile } from '../types';
 import { cn } from '../lib/utils';
@@ -52,8 +52,10 @@ export default function CaseManagement({ user }: CaseManagementProps) {
   const [caseDocuments, setCaseDocuments] = useState<any[]>([]);
   const [caseFinance, setCaseFinance] = useState<any | null>(null);
   const [caseJudgments, setCaseJudgments] = useState<Judgment[]>([]);
+  const [caseExpertSessions, setCaseExpertSessions] = useState<any[]>([]);
   const [caseNotes, setCaseNotes] = useState<{ id: string; text: string; date: string; author: string }[]>([]);
   const [caseTasks, setCaseTasks] = useState<any[]>([]);
+  const [isExpertHistoryOpen, setIsExpertHistoryOpen] = useState(false);
   const [newNote, setNewNote] = useState('');
   const [sessionDate, setSessionDate] = useState('');
   const [sessionDecision, setSessionDecision] = useState('');
@@ -113,6 +115,13 @@ export default function CaseManagement({ user }: CaseManagementProps) {
         },
         (err) => handleFirestoreError(err, OperationType.LIST, 'tasks')
       );
+      const expertUnsub = onSnapshot(
+        query(collection(db, 'expertSessions'), where('caseId', '==', selectedCaseDetails.id), orderBy('date', 'desc')), 
+        (snap) => {
+          setCaseExpertSessions(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        },
+        (err) => handleFirestoreError(err, OperationType.LIST, 'expertSessions')
+      );
 
       return () => {
         sessUnsub();
@@ -122,6 +131,7 @@ export default function CaseManagement({ user }: CaseManagementProps) {
         judgUnsub();
         notesUnsub();
         tasksUnsub();
+        expertUnsub();
       };
     }
   }, [selectedCaseDetails]);
@@ -1106,11 +1116,11 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                               </span>
                             </div>
                             <h4 className="text-sm font-bold text-slate-900">
-                              {event.timelineType === 'session' ? 'جلسة مرافعة' : 
+                              {event.timelineType === 'session' ? (event.decision || 'جلسة مرافعة') : 
                                event.timelineType === 'procedure' ? event.type : `حكم ${event.type === 'initial' ? 'ابتدائي' : event.type === 'appeal' ? 'استئناف' : 'تمييز'}`}
                             </h4>
                             <p className="text-xs text-slate-500 font-medium mt-1">
-                              {event.timelineType === 'session' ? (event.decision || 'بانتظار القرار') : 
+                              {event.timelineType === 'session' ? (event.decision ? '' : 'بانتظار القرار') : 
                                event.timelineType === 'procedure' ? event.notes : event.result}
                             </p>
                             {event.nextDate && (
@@ -1236,6 +1246,69 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                           إدارة المهام
                         </button>
                       </div>
+                    </div>
+
+                    {/* Expert Sessions History (Collapsible) */}
+                    <div className="space-y-4">
+                      <button 
+                        onClick={() => setIsExpertHistoryOpen(!isExpertHistoryOpen)}
+                        className="w-full flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:bg-slate-100 transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Users className="w-5 h-5 text-indigo-600" />
+                          <span className="text-sm font-black text-slate-900">سجل جلسات الخبراء</span>
+                          <span className="bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-lg text-[10px] font-black">
+                            {caseExpertSessions.length}
+                          </span>
+                        </div>
+                        <motion.div
+                          animate={{ rotate: isExpertHistoryOpen ? 180 : 0 }}
+                          className="text-slate-400 group-hover:text-indigo-600"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </motion.div>
+                      </button>
+
+                      <AnimatePresence>
+                        {isExpertHistoryOpen && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="overflow-hidden space-y-3"
+                          >
+                            {caseExpertSessions.map((s) => (
+                              <div key={s.id} className="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{s.date}</span>
+                                  <span className={cn(
+                                    "px-2 py-0.5 rounded-lg text-[10px] font-black uppercase",
+                                    s.status === 'attended' ? "bg-emerald-50 text-emerald-600" : 
+                                    s.status === 'reserved_for_report' ? "bg-indigo-50 text-indigo-600" : "bg-amber-50 text-amber-600"
+                                  )}>
+                                    {s.status === 'attended' ? 'تمت' : s.status === 'reserved_for_report' ? 'محجوز للتقرير' : 'قادمة'}
+                                  </span>
+                                </div>
+                                <p className="text-sm font-bold text-slate-900">الخبير: {s.expertName}</p>
+                                {s.decision && (
+                                  <p className="text-xs text-slate-500 font-medium bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                    {s.decision}
+                                  </p>
+                                )}
+                                {s.nextDate && (
+                                  <div className="flex items-center gap-2 text-[10px] font-black text-indigo-600">
+                                    <CalendarPlus className="w-3 h-3" />
+                                    <span>الجلسة القادمة: {s.nextDate}</span>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                            {caseExpertSessions.length === 0 && (
+                              <p className="text-center py-4 text-slate-400 text-xs font-bold italic">لا توجد جلسات خبراء مسجلة</p>
+                            )}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
 
                     {/* Finance Summary */}
@@ -1410,8 +1483,11 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                 <button
                   disabled={!selectedTagForPrint}
                   onClick={() => {
-                    window.print();
                     setIsTagPrintModalOpen(false);
+                    // Small delay to allow modal to close and print section to be ready
+                    setTimeout(() => {
+                      window.print();
+                    }, 500);
                   }}
                   className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black text-sm shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
@@ -1423,6 +1499,145 @@ export default function CaseManagement({ user }: CaseManagementProps) {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Print-only Case Details Section */}
+      {selectedCaseDetails && (
+        <div className="hidden print:block p-12 bg-white text-right" dir="rtl">
+          <div className="flex justify-between items-start mb-10 border-b-4 border-slate-900 pb-8">
+            <div>
+              <h1 className="text-3xl font-black text-slate-900">مكتب المحامي محمد امين علي الصايغ</h1>
+              <p className="text-lg text-slate-600 font-bold mt-2">للمحاماة والاستشارات القانونية</p>
+              <div className="mt-4 space-y-1 text-sm text-slate-500 font-bold">
+                <p>دولة الكويت - برج التجارية - الدور 25</p>
+                <p>هاتف: 22222222 - فاكس: 22222223</p>
+              </div>
+            </div>
+            <div className="text-left">
+              <div className="bg-slate-900 text-white px-6 py-3 rounded-xl font-black text-xl mb-4">
+                تقرير تفاصيل القضية
+              </div>
+              <p className="font-bold text-slate-900 text-sm">تاريخ التقرير: {new Date().toLocaleDateString('ar-EG')}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-12 mb-12">
+            <div className="space-y-6">
+              <h3 className="text-xl font-black border-b-2 border-slate-200 pb-2 text-indigo-600">بيانات القضية الأساسية</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                  <p className="text-xs font-black text-slate-400 mb-1">رقم القضية</p>
+                  <p className="text-lg font-black text-slate-900">{selectedCaseDetails.caseNumber || '---'}</p>
+                </div>
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                  <p className="text-xs font-black text-slate-400 mb-1">الرقم الآلي</p>
+                  <p className="text-lg font-black text-indigo-600">{selectedCaseDetails.autoNumber || '---'}</p>
+                </div>
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                  <p className="text-xs font-black text-slate-400 mb-1">المحكمة</p>
+                  <p className="text-sm font-bold text-slate-900">{selectedCaseDetails.court || '---'}</p>
+                </div>
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                  <p className="text-xs font-black text-slate-400 mb-1">الدائرة</p>
+                  <p className="text-sm font-bold text-slate-900">{selectedCaseDetails.circuit || '---'}</p>
+                </div>
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                  <p className="text-xs font-black text-slate-400 mb-1">السنة</p>
+                  <p className="text-sm font-bold text-slate-900">{selectedCaseDetails.year || '---'}</p>
+                </div>
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                  <p className="text-xs font-black text-slate-400 mb-1">الحالة</p>
+                  <p className="text-sm font-bold text-slate-900">{STATUS_MAP[selectedCaseDetails.status]?.label}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <h3 className="text-xl font-black border-b-2 border-slate-200 pb-2 text-indigo-600">بيانات الأطراف</h3>
+              <div className="space-y-4">
+                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200">
+                  <p className="text-xs font-black text-slate-400 mb-1">الموكل ({selectedCaseDetails.clientPosition ? POSITION_LABELS[selectedCaseDetails.clientPosition] : '---'})</p>
+                  <p className="text-xl font-black text-slate-900">{selectedCaseDetails.clientName || '---'}</p>
+                </div>
+                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200">
+                  <p className="text-xs font-black text-slate-400 mb-1">الخصم</p>
+                  <p className="text-xl font-black text-slate-900">{selectedCaseDetails.opponent || '---'}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-6 mb-12">
+            <h3 className="text-xl font-black border-b-2 border-slate-200 pb-2 text-indigo-600">الخط الزمني والقرارات</h3>
+            <div className="border-2 border-slate-900 rounded-2xl overflow-hidden">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-slate-100 border-b-2 border-slate-900">
+                    <th className="p-4 text-right text-sm font-black border-l border-slate-900 w-32">التاريخ</th>
+                    <th className="p-4 text-right text-sm font-black border-l border-slate-900 w-32">النوع</th>
+                    <th className="p-4 text-right text-sm font-black">القرار / التفاصيل</th>
+                    <th className="p-4 text-right text-sm font-black border-r border-slate-900 w-40">الجلسة القادمة</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {timelineEvents.map((event, index) => (
+                    <tr key={index} className="page-break-inside-avoid">
+                      <td className="p-4 text-sm font-bold border-l border-slate-200">{event.timelineDate}</td>
+                      <td className="p-4 text-sm font-black border-l border-slate-200">
+                        {event.timelineType === 'session' ? 'جلسة' : 
+                         event.timelineType === 'procedure' ? 'إجراء' : 'حكم'}
+                      </td>
+                      <td className="p-4 text-sm font-medium">
+                        <div className="font-black text-slate-900 mb-1">
+                          {event.timelineType === 'session' ? (event.decision || 'جلسة مرافعة') : 
+                           event.timelineType === 'procedure' ? event.type : `حكم ${event.type}`}
+                        </div>
+                        <div className="text-slate-600">
+                          {event.timelineType === 'session' ? '' : 
+                           event.timelineType === 'procedure' ? event.notes : event.result}
+                        </div>
+                      </td>
+                      <td className="p-4 text-sm font-black text-indigo-600 border-r border-slate-200">
+                        {event.nextDate || '---'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {caseFinance && (
+            <div className="space-y-6 mb-12 page-break-inside-avoid">
+              <h3 className="text-xl font-black border-b-2 border-slate-200 pb-2 text-indigo-600">الملخص المالي</h3>
+              <div className="grid grid-cols-3 gap-6">
+                <div className="bg-slate-900 text-white p-6 rounded-3xl">
+                  <p className="text-xs font-black uppercase opacity-60 mb-2">إجمالي الأتعاب</p>
+                  <p className="text-2xl font-black">{caseFinance.totalFees?.toLocaleString()} د.ك</p>
+                </div>
+                <div className="bg-emerald-50 border-2 border-emerald-200 p-6 rounded-3xl">
+                  <p className="text-xs font-black text-emerald-600 uppercase mb-2">المسدد</p>
+                  <p className="text-2xl font-black text-emerald-700">{caseFinance.receivedAmount?.toLocaleString()} د.ك</p>
+                </div>
+                <div className="bg-amber-50 border-2 border-amber-200 p-6 rounded-3xl">
+                  <p className="text-xs font-black text-amber-600 uppercase mb-2">المتبقي</p>
+                  <p className="text-2xl font-black text-amber-700">{(caseFinance.totalFees - caseFinance.receivedAmount)?.toLocaleString()} د.ك</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-24 flex justify-between items-end">
+            <div className="text-center w-72">
+              <p className="font-black text-xl mb-20 text-slate-900">توقيع المحامي المسؤول</p>
+              <div className="border-b-4 border-slate-900"></div>
+            </div>
+            <div className="text-center w-72">
+              <p className="font-black text-xl mb-20 text-slate-900">ختم واعتماد المكتب</p>
+              <div className="border-b-4 border-slate-900"></div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Print-only Tag Report Section */}
       {selectedTagForPrint && (
