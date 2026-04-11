@@ -59,19 +59,56 @@ export default function Reports({ user }: ReportsProps) {
   }, []);
 
   const handlePrint = () => {
+    const style = document.createElement('style');
+    style.innerHTML = `
+      @media print {
+        body { background: white !important; }
+        .print-hidden { display: none !important; }
+        .report-container { border: none !important; box-shadow: none !important; padding: 0 !important; }
+        table { width: 100% !important; border-collapse: collapse !important; }
+        th, td { border: 1px solid #e2e8f0 !important; padding: 12px !important; }
+        th { background-color: #f8fafc !important; }
+      }
+    `;
+    document.head.appendChild(style);
     window.print();
+    document.head.removeChild(style);
   };
 
   const handleExportPDF = async () => {
     if (!reportRef.current) return;
     setIsExporting(true);
     try {
+      // Temporarily fix oklch colors for html2canvas
+      const style = document.createElement('style');
+      style.innerHTML = `
+        * {
+          --tw-ring-color: rgba(59, 130, 246, 0.5) !important;
+          --tw-ring-offset-shadow: 0 0 #0000 !important;
+          --tw-ring-shadow: 0 0 #0000 !important;
+          --tw-shadow: 0 0 #0000 !important;
+          --tw-shadow-colored: 0 0 #0000 !important;
+        }
+      `;
+      document.head.appendChild(style);
+
       const canvas = await html2canvas(reportRef.current, {
         scale: 2,
         useCORS: true,
         logging: false,
-        backgroundColor: '#ffffff'
+        backgroundColor: '#ffffff',
+        onclone: (clonedDoc) => {
+          const el = clonedDoc.getElementById('report-content');
+          if (el) {
+            el.style.padding = '40px';
+            el.style.borderRadius = '0';
+            el.style.border = 'none';
+          }
+        }
       });
+
+      document.head.removeChild(style);
+
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
       const imgProps = pdf.getImageProperties(imgData);
@@ -238,22 +275,61 @@ export default function Reports({ user }: ReportsProps) {
       </div>
 
       {/* Report Content */}
-      <div ref={reportRef} className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm print:shadow-none print:border-none">
+      <div ref={reportRef} id="report-content" className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm print:shadow-none print:border-none report-container">
         {/* Report Header (Visible in Print) */}
-        <div className="hidden print:flex items-center justify-between mb-12 border-b-2 border-slate-900 pb-6">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-slate-900 rounded-xl">
-              <FileText className="w-8 h-8 text-white" />
+        <div className="hidden print:flex items-center justify-between mb-12 border-b-4 border-slate-900 pb-8">
+          <div className="flex items-center gap-6">
+            <div className="p-4 bg-slate-900 rounded-2xl shadow-lg">
+              <Scale className="w-10 h-10 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-black text-slate-900">Loyer OS</h1>
-              <p className="text-sm font-bold text-slate-500">نظام إدارة المكاتب القانونية</p>
+              <h1 className="text-3xl font-black text-slate-900 tracking-tighter">الأمين</h1>
+              <p className="text-sm font-bold text-slate-500">مكتب المحامي محمد امين علي الصايغ</p>
+              <p className="text-[10px] font-bold text-slate-400 mt-1">نظام إدارة المكاتب القانونية الذكي</p>
             </div>
           </div>
           <div className="text-left">
-            <h2 className="text-xl font-black text-slate-900">تقرير حالة {reportType === 'cases' ? 'القضايا' : reportType === 'finance' ? 'المالية' : 'الموكلين'}</h2>
-            <p className="text-sm font-bold text-slate-500">تاريخ الإصدار: {format(new Date(), 'yyyy/MM/dd')}</p>
+            <h2 className="text-2xl font-black text-slate-900 mb-1">تقرير {reportType === 'cases' ? 'القضايا' : reportType === 'finance' ? 'المالية' : 'الموكلين'}</h2>
+            <div className="flex flex-col items-end gap-1">
+              <span className="text-xs font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-lg">رقم التقرير: {Math.floor(Math.random() * 1000000)}</span>
+              <span className="text-xs font-bold text-slate-500">تاريخ الإصدار: {format(new Date(), 'yyyy/MM/dd')}</span>
+              <span className="text-xs font-bold text-slate-500">وقت الإصدار: {format(new Date(), 'hh:mm a')}</span>
+            </div>
           </div>
+        </div>
+
+        {/* Summary Stats for Print */}
+        <div className="hidden print:grid grid-cols-4 gap-4 mb-8">
+          <div className="p-4 border-2 border-slate-100 rounded-2xl text-center">
+            <p className="text-[10px] font-black text-slate-400 uppercase mb-1">إجمالي السجلات</p>
+            <p className="text-xl font-black text-slate-900">
+              {reportType === 'cases' ? filteredCases.length : reportType === 'finance' ? filteredFinances.length : filteredClients.length}
+            </p>
+          </div>
+          {reportType === 'cases' && (
+            <>
+              <div className="p-4 border-2 border-slate-100 rounded-2xl text-center">
+                <p className="text-[10px] font-black text-slate-400 uppercase mb-1">متداولة</p>
+                <p className="text-xl font-black text-indigo-600">{filteredCases.filter(c => c.status === 'active').length}</p>
+              </div>
+              <div className="p-4 border-2 border-slate-100 rounded-2xl text-center">
+                <p className="text-[10px] font-black text-slate-400 uppercase mb-1">منتهية</p>
+                <p className="text-xl font-black text-emerald-600">{filteredCases.filter(c => c.status === 'archive').length}</p>
+              </div>
+            </>
+          )}
+          {reportType === 'finance' && (
+            <>
+              <div className="p-4 border-2 border-slate-100 rounded-2xl text-center">
+                <p className="text-[10px] font-black text-slate-400 uppercase mb-1">إجمالي الأتعاب</p>
+                <p className="text-xl font-black text-indigo-600">{filteredFinances.reduce((a, b) => a + b.totalFees, 0).toLocaleString()}</p>
+              </div>
+              <div className="p-4 border-2 border-slate-100 rounded-2xl text-center">
+                <p className="text-[10px] font-black text-slate-400 uppercase mb-1">المحصل</p>
+                <p className="text-xl font-black text-emerald-600">{filteredFinances.reduce((a, b) => a + b.receivedAmount, 0).toLocaleString()}</p>
+              </div>
+            </>
+          )}
         </div>
 
         {reportType === 'cases' && (
@@ -384,8 +460,27 @@ export default function Reports({ user }: ReportsProps) {
         )}
 
         {/* Report Footer (Visible in Print) */}
-        <div className="hidden print:block mt-12 pt-6 border-t border-slate-200 text-center text-xs text-slate-400 font-bold">
-          هذا التقرير تم إنشاؤه آلياً بواسطة نظام Loyer OS لإدارة المكاتب القانونية.
+        <div className="hidden print:grid grid-cols-2 gap-12 mt-20 pt-12 border-t-2 border-slate-100">
+          <div className="text-center space-y-8">
+            <p className="font-black text-slate-900">توقيع المسؤول</p>
+            <div className="w-48 h-24 border-2 border-dashed border-slate-200 rounded-2xl mx-auto flex items-center justify-center text-[10px] text-slate-300 font-bold">
+              التوقيع هنا
+            </div>
+            <p className="text-xs font-bold text-slate-500">................................................</p>
+          </div>
+          <div className="text-center space-y-8">
+            <p className="font-black text-slate-900">ختم المكتب</p>
+            <div className="w-32 h-32 border-4 border-double border-slate-100 rounded-full mx-auto flex items-center justify-center text-[10px] text-slate-200 font-black uppercase rotate-12">
+              ختم المكتب الرسمي
+            </div>
+          </div>
+        </div>
+
+        <div className="hidden print:block mt-12 text-center">
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+            هذا التقرير سري وخاص بمكتب المحامي محمد امين علي الصايغ © {new Date().getFullYear()}
+          </p>
+          <p className="text-[8px] font-bold text-slate-300 mt-1">تم الإنشاء بواسطة نظام الأمين الذكي</p>
         </div>
       </div>
     </div>

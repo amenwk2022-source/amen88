@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, where, getDoc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { CalendarClock, ArrowRightLeft, AlertCircle, CheckCircle2, Clock, Search, Filter, Download, MessageSquare, Save, X, Scale, FileText, ImageIcon, Trash2, Printer, CalendarDays, CheckCircle, XCircle, Plus, Edit2, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Session, Case, UserProfile, ExpertSession } from '../types';
@@ -17,11 +17,21 @@ interface SessionRelayProps {
 
 export default function SessionRelay({ user }: SessionRelayProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [expertSessions, setExpertSessions] = useState<ExpertSession[]>([]);
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'today' | 'upcoming' | 'omitted' | 'search'>('today');
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tab = params.get('tab');
+    if (tab === 'omitted' || tab === 'today' || tab === 'upcoming' || tab === 'search') {
+      setActiveTab(tab as any);
+    }
+  }, [location.search]);
+
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedCourt, setSelectedCourt] = useState('ALL');
   const [editingSession, setEditingSession] = useState<Session | null>(null);
@@ -542,84 +552,106 @@ export default function SessionRelay({ user }: SessionRelayProps) {
       {/* Sessions List - Formal Table */}
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden print:border-none print:rounded-none print:shadow-none">
         
-        {/* Print Header */}
-        <div className="hidden print:block p-10 border-b-4 border-slate-900 text-center bg-white">
-          <div className="flex justify-between items-center mb-10">
-             <div className="text-right">
-                <h2 className="font-black text-3xl text-slate-900 mb-2">مكتب المحامي محمد امين علي الصايغ</h2>
-                <p className="text-lg text-slate-600 font-bold">للمحاماة والاستشارات القانونية</p>
-                <p className="text-xs text-slate-400 mt-2">دولة الكويت - برج التجارية - الدور 25</p>
-             </div>
-             <div className="text-left flex flex-col items-end">
-                <div className="bg-slate-900 text-white p-5 rounded-2xl mb-4 shadow-lg">
-                  <Scale className="w-10 h-10" />
+        {/* Print Header - Professional Redesign */}
+        <div className="hidden print:block bg-white">
+          <div className="p-10 border-b-8 border-slate-900">
+            <div className="flex justify-between items-start mb-12">
+              <div className="text-right space-y-2">
+                <h2 className="font-black text-4xl text-slate-900 tracking-tight">مكتب المحامي محمد امين علي الصايغ</h2>
+                <p className="text-xl text-slate-600 font-bold">للمحاماة والاستشارات القانونية والتحكيم</p>
+                <div className="flex flex-col text-sm text-slate-500 font-bold mt-4 space-y-1">
+                  <span>دولة الكويت - مدينة الكويت</span>
+                  <span>برج التجارية - الدور 25</span>
+                  <span>هاتف: 22200000 - فاكس: 22200001</span>
                 </div>
-                <p className="font-black text-slate-900 text-lg">التاريخ: {new Date().toLocaleDateString('ar-EG')}</p>
-             </div>
-          </div>
-          
-          <div className="mb-10">
-            <h1 className="text-4xl font-black bg-slate-100 inline-block px-16 py-5 border-4 border-slate-900 rounded-3xl shadow-sm">
-              رول جلسات: {formatDate(displayDate)}
-            </h1>
-          </div>
-          
-          {selectedCourt !== 'ALL' && (
-            <div className="flex justify-center mb-6">
-              <span className="bg-white text-slate-900 px-8 py-3 rounded-2xl border-2 border-slate-900 font-black text-xl">
-                المحكمة: {selectedCourt}
-              </span>
+              </div>
+              <div className="flex flex-col items-end">
+                <div className="w-24 h-24 bg-slate-900 rounded-3xl flex items-center justify-center shadow-xl mb-4 rotate-3">
+                  <Scale className="w-12 h-12 text-white -rotate-3" />
+                </div>
+                <div className="text-left space-y-1">
+                  <p className="font-black text-slate-900 text-lg">رقم التقرير: #ROLL-{format(displayDate, 'yyyyMMdd')}</p>
+                  <p className="font-bold text-slate-500 text-sm">تاريخ الطباعة: {format(new Date(), 'yyyy/MM/dd HH:mm')}</p>
+                </div>
+              </div>
             </div>
-          )}
+
+            <div className="text-center relative py-8">
+              <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                <div className="w-full border-t-2 border-slate-200"></div>
+              </div>
+              <div className="relative flex justify-center">
+                <span className="bg-white px-10 text-5xl font-black text-slate-900 tracking-tighter uppercase">
+                  رول الجلسات اليومي
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6 mt-10">
+              <div className="bg-slate-50 p-6 rounded-2xl border-2 border-slate-100 text-center">
+                <p className="text-xs font-black text-slate-400 uppercase mb-2">تاريخ الرول</p>
+                <p className="text-xl font-black text-slate-900">{formatDate(displayDate)}</p>
+              </div>
+              <div className="bg-slate-50 p-6 rounded-2xl border-2 border-slate-100 text-center">
+                <p className="text-xs font-black text-slate-400 uppercase mb-2">إجمالي الجلسات</p>
+                <p className="text-xl font-black text-slate-900">{filteredSessions.length + filteredExpertSessions.length}</p>
+              </div>
+              <div className="bg-slate-50 p-6 rounded-2xl border-2 border-slate-100 text-center">
+                <p className="text-xs font-black text-slate-400 uppercase mb-2">المحكمة المختصة</p>
+                <p className="text-xl font-black text-slate-900">{selectedCourt === 'ALL' ? 'جميع المحاكم' : selectedCourt}</p>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="overflow-x-auto print:overflow-visible">
-          <table className="w-full text-right border-collapse print:border-2 print:border-slate-900">
+        <div className="overflow-x-auto print:overflow-visible print:px-10 print:py-8">
+          <table className="w-full text-right border-collapse print:border-t-0">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 print:bg-slate-100 print:border-b-2 print:border-slate-900">
-                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 w-12 text-center print:text-slate-900 print:border-l-2 print:border-slate-900 print:text-sm">#</th>
-                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-l-2 print:border-slate-900 print:text-sm">المحكمة</th>
-                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-l-2 print:border-slate-900 print:text-sm">الدائرة</th>
-                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-l-2 print:border-slate-900 print:text-sm">رقم القضية</th>
-                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-l-2 print:border-slate-900 print:text-sm">الموكل</th>
-                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-l-2 print:border-slate-900 print:text-sm">الخصم</th>
-                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest print:text-slate-900 print:text-sm">القرار</th>
+              <tr className="bg-slate-50 border-b border-slate-200 print:bg-slate-900 print:text-white">
+                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 w-12 text-center print:text-white print:border-slate-700 print:text-sm">#</th>
+                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-white print:border-slate-700 print:text-sm">المحكمة / الدائرة</th>
+                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-white print:border-slate-700 print:text-sm">رقم القضية</th>
+                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-white print:border-slate-700 print:text-sm">الموكل</th>
+                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-white print:border-slate-700 print:text-sm">الخصم</th>
+                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest print:text-white print:text-sm">القرار / الإجراء</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 print:divide-y-2 print:divide-slate-900">
+            <tbody className="divide-y divide-slate-100 print:divide-y-0">
               {filteredSessions.length > 0 ? (
                 filteredSessions.map((session, index) => (
                   <motion.tr
                     layout
                     key={session.id}
                     className={cn(
-                      "transition-all hover:bg-slate-50 print:hover:bg-transparent",
+                      "transition-all hover:bg-slate-50 print:hover:bg-transparent print:border-b print:border-slate-200",
                       session.decision ? "bg-emerald-50/30 print:bg-transparent" : ""
                     )}
                   >
-                    <td className="p-4 text-sm font-black text-slate-400 text-center border-l border-slate-100 print:text-slate-900 print:border-l-2 print:border-slate-900 print:text-base">
+                    <td className="p-4 text-sm font-black text-slate-400 text-center border-l border-slate-100 print:text-slate-900 print:border-slate-200 print:text-base">
                       {index + 1}
                     </td>
-                    <td className="p-4 border-l border-slate-100 print:border-l-2 print:border-slate-900">
-                      <span className="text-sm font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-100 print:bg-transparent print:border-none print:text-slate-900 print:text-base">
-                        {session.caseInfo?.court || '---'}
-                      </span>
-                    </td>
-                    <td className="p-4 border-l border-slate-100 print:border-l-2 print:border-slate-900">
-                      <span className="text-sm font-bold text-slate-700 print:text-slate-900 print:text-base">
-                        {session.caseInfo?.circuit || '---'}
-                      </span>
-                    </td>
-                    <td className="p-4 border-l border-slate-100 print:border-l-2 print:border-slate-900">
-                      <span className="text-sm font-black text-slate-900 print:text-base">
-                        {session.caseInfo?.caseNumber || '---'} / {session.caseInfo?.year || '----'}
-                      </span>
-                    </td>
-                    <td className="p-4 border-l border-slate-100 print:border-l-2 print:border-slate-900">
+                    <td className="p-4 border-l border-slate-100 print:border-slate-200">
                       <div className="flex flex-col">
-                        <span className="text-sm font-bold text-slate-700 print:text-slate-900 print:text-base">{session.caseInfo?.clientName || '---'}</span>
+                        <span className="text-sm font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-100 print:bg-transparent print:border-none print:text-slate-900 print:text-base print:font-black">
+                          {session.caseInfo?.court || '---'}
+                        </span>
+                        <span className="text-[10px] font-black text-slate-400 mt-1 print:text-slate-500 print:text-xs">
+                          {session.caseInfo?.circuit || '---'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="p-4 border-l border-slate-100 print:border-slate-200">
+                      <span className="text-sm font-black text-slate-900 print:text-base">
+                        {session.caseInfo?.caseNumber || '---'}
+                        <span className="text-slate-400 mx-1">/</span>
+                        {session.caseInfo?.year || '----'}
+                      </span>
+                    </td>
+                    <td className="p-4 border-l border-slate-100 print:border-slate-200">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-bold text-slate-700 print:text-slate-900 print:text-base print:font-black">{session.caseInfo?.clientName || '---'}</span>
                         {session.caseInfo?.clientPosition && (
-                          <span className="text-[10px] font-black text-indigo-600 print:text-slate-500">
+                          <span className="text-[10px] font-black text-indigo-600 print:text-slate-500 print:text-xs">
                             ({session.caseInfo.clientPosition === 'plaintiff' ? 'مدعي' : 
                                session.caseInfo.clientPosition === 'defendant' ? 'مدعى عليه' :
                                session.caseInfo.clientPosition === 'appellant' ? 'مستأنف' : 'مستأنف ضده'})
@@ -627,7 +659,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                         )}
                       </div>
                     </td>
-                    <td className="p-4 border-l border-slate-100 print:border-l-2 print:border-slate-900">
+                    <td className="p-4 border-l border-slate-100 print:border-slate-200">
                       <span className="text-sm font-bold text-slate-700 print:text-slate-900 print:text-base">{session.caseInfo?.opponent || '---'}</span>
                     </td>
                     <td className="p-4 print:text-base">
@@ -637,7 +669,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                             <CheckCircle className="hidden print:block w-5 h-5 text-slate-900 shrink-0 mt-0.5" />
                             <CheckCircle className="print:hidden w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                             <div>
-                              <p className="text-sm font-bold text-emerald-900 print:text-slate-900 leading-relaxed print:text-base">{session.decision}</p>
+                              <p className="text-sm font-bold text-emerald-900 print:text-slate-900 leading-relaxed print:text-base print:font-bold">{session.decision}</p>
                               {session.nextDate && (
                                 <p className="text-[10px] text-emerald-600 font-black mt-1 print:text-slate-600 print:text-sm">
                                   الجلسة القادمة: {format(new Date(session.nextDate), 'yyyy/MM/dd')}
@@ -659,7 +691,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                               <ArrowRightLeft className="w-4 h-4" />
                               إثبات القرار
                             </button>
-                            <div className="hidden print:block h-16 border-b border-dotted border-slate-400 w-full"></div>
+                            <div className="hidden print:block h-12 border-b-2 border-dashed border-slate-200 w-full"></div>
                           </>
                         )}
                         
@@ -738,22 +770,21 @@ export default function SessionRelay({ user }: SessionRelayProps) {
               {/* Expert Sessions Section */}
               {filteredExpertSessions.length > 0 && (
                 <>
-                  {/* Separator Row - Only visible in print as requested */}
-                  <tr className="hidden print:table-row bg-slate-100 print:bg-slate-200 border-y-2 border-slate-900">
-                    <td colSpan={7} className="p-8 text-center font-black text-slate-900 text-2xl">
-                      رول جلسات الخبراء
+                  <tr className="hidden print:table-row">
+                    <td colSpan={6} className="p-0">
+                      <div className="bg-slate-900 text-white p-6 text-center font-black text-2xl tracking-widest uppercase mt-12">
+                        رول جلسات الخبراء
+                      </div>
                     </td>
                   </tr>
                   
-                  {/* Expert Headers - Requested by user, visible in UI and print for clarity */}
-                  <tr className="bg-slate-50 border-b border-slate-200 print:bg-slate-100 print:border-slate-900">
-                    <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 w-12 text-center print:text-slate-900 print:border-slate-900">#</th>
-                    <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">الخبير</th>
-                    <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">الساعة / المكان</th>
-                    <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">رقم القضية</th>
-                    <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">الموكل</th>
-                    <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">الخصم</th>
-                    <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest print:text-slate-900">ملاحظات</th>
+                  <tr className="bg-slate-50 border-b border-slate-200 print:bg-slate-100 print:border-b-2 print:border-slate-900">
+                    <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 w-12 text-center print:text-slate-900 print:border-slate-900 print:text-sm">#</th>
+                    <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900 print:text-sm">الخبير / المكان</th>
+                    <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900 print:text-sm">رقم القضية</th>
+                    <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900 print:text-sm">الموكل</th>
+                    <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900 print:text-sm">الخصم</th>
+                    <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest print:text-slate-900 print:text-sm">ملاحظات الخبير</th>
                   </tr>
 
                   {filteredExpertSessions.map((session, index) => (
@@ -761,33 +792,26 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                       <td className="p-4 text-sm font-black text-slate-400 text-center border-l border-slate-100 print:text-slate-900 print:border-slate-900">
                         {index + 1}
                       </td>
-                      <td className="p-4 border-l border-slate-100 print:border-slate-900">
-                        <span className="text-sm font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-100 print:bg-transparent print:border-none print:text-slate-900">
-                          {session.expertName}
-                        </span>
-                      </td>
-                      <td className="p-4 border-l border-slate-100 print:border-slate-900">
+                      <td className="p-4 border-l border-slate-100 print:border-slate-200">
                         <div className="flex flex-col">
-                          <span className="text-sm font-bold text-slate-700 print:text-slate-900">
-                            {session.officeLocation || '---'}
+                          <span className="text-sm font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-100 print:bg-transparent print:border-none print:text-slate-900 print:text-base print:font-black">
+                            {session.expertName}
                           </span>
-                          {session.time && (
-                            <span className="text-[10px] font-black text-indigo-600 print:text-slate-500">
-                              الساعة: {session.time}
-                            </span>
-                          )}
+                          <span className="text-[10px] font-black text-slate-400 mt-1 print:text-slate-500 print:text-xs">
+                            {session.officeLocation || '---'} {session.time ? `- الساعة: ${session.time}` : ''}
+                          </span>
                         </div>
                       </td>
-                      <td className="p-4 border-l border-slate-100 print:border-slate-900">
-                        <span className="text-sm font-black text-slate-900">
+                      <td className="p-4 border-l border-slate-100 print:border-slate-200">
+                        <span className="text-sm font-black text-slate-900 print:text-base">
                           {session.caseInfo?.caseNumber || '---'}
                         </span>
                       </td>
-                      <td className="p-4 border-l border-slate-100 print:border-l-2 print:border-slate-900">
+                      <td className="p-4 border-l border-slate-100 print:border-slate-200">
                         <div className="flex flex-col">
-                          <span className="text-sm font-bold text-slate-700 print:text-slate-900 print:text-base">{session.caseInfo?.clientName || '---'}</span>
+                          <span className="text-sm font-bold text-slate-700 print:text-slate-900 print:text-base print:font-black">{session.caseInfo?.clientName || '---'}</span>
                           {session.caseInfo?.clientPosition && (
-                            <span className="text-[10px] font-black text-emerald-600 print:text-slate-500">
+                            <span className="text-[10px] font-black text-emerald-600 print:text-slate-500 print:text-xs">
                               ({session.caseInfo.clientPosition === 'plaintiff' ? 'مدعي' : 
                                  session.caseInfo.clientPosition === 'defendant' ? 'مدعى عليه' :
                                  session.caseInfo.clientPosition === 'appellant' ? 'مستأنف' : 'مستأنف ضده'})
@@ -795,13 +819,11 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                           )}
                         </div>
                       </td>
-                      <td className="p-4 border-l border-slate-100 print:border-slate-900">
-                        <span className="text-sm font-bold text-slate-700 print:text-slate-900">{session.caseInfo?.opponent || '---'}</span>
+                      <td className="p-4 border-l border-slate-100 print:border-slate-200">
+                        <span className="text-sm font-bold text-slate-700 print:text-slate-900 print:text-base">{session.caseInfo?.opponent || '---'}</span>
                       </td>
-                      <td className="p-4">
-                        <span className="text-xs font-medium text-slate-500 print:text-slate-900 leading-relaxed">
-                          {session.notes || '---'}
-                        </span>
+                      <td className="p-4 print:text-base">
+                        <div className="hidden print:block h-12 border-b-2 border-dashed border-slate-200 w-full"></div>
                       </td>
                     </tr>
                   ))}
@@ -812,17 +834,24 @@ export default function SessionRelay({ user }: SessionRelayProps) {
         </div>
 
         {/* Print Footer */}
-        <div className="hidden print:block p-12 border-t border-slate-900 mt-12">
-           <div className="flex justify-between items-end">
-              <div className="text-center w-64">
-                 <p className="font-black text-lg mb-12 text-slate-900">توقيع المحامي الحاضر</p>
-                 <div className="border-b-2 border-slate-900 w-full"></div>
-              </div>
-              <div className="text-center w-64">
-                 <p className="font-black text-lg mb-12 text-slate-900">اعتماد الإدارة</p>
-                 <div className="border-b-2 border-slate-900 w-full"></div>
-              </div>
-           </div>
+        <div className="hidden print:block mt-20 p-10 border-t-2 border-slate-100">
+          <div className="grid grid-cols-2 gap-20">
+            <div className="text-center space-y-8">
+              <p className="font-black text-slate-900 text-lg">توقيع المحامي الحاضر</p>
+              <div className="h-24 border-2 border-dashed border-slate-200 rounded-3xl"></div>
+            </div>
+            <div className="text-center space-y-8">
+              <p className="font-black text-slate-900 text-lg">ختم المكتب</p>
+              <div className="h-24 border-2 border-dashed border-slate-200 rounded-3xl"></div>
+            </div>
+          </div>
+          <div className="mt-20 text-center">
+            <p className="text-xs text-slate-400 font-bold">
+              هذا التقرير تم إنشاؤه آلياً بواسطة نظام Loyer OS لإدارة المكاتب القانونية.
+              <br />
+              جميع الحقوق محفوظة © {new Date().getFullYear()} مكتب المحامي محمد امين علي الصايغ.
+            </p>
+          </div>
         </div>
       </div>
 
