@@ -92,6 +92,18 @@
         "uploadDate": { "type": "string", "format": "date-time" }
       },
       "required": ["caseId", "title", "fileUrl"]
+    },
+    "CaseNote": {
+      "title": "Case Note",
+      "description": "Internal notes for a case.",
+      "type": "object",
+      "properties": {
+        "caseId": { "type": "string" },
+        "text": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "author": { "type": "string" }
+      },
+      "required": ["caseId", "text", "date", "author"]
     }
   },
   "firestore": {
@@ -101,6 +113,7 @@
     "/sessions/{sessionId}": { "schema": "Session", "description": "Court sessions" },
     "/procedures/{procedureId}": { "schema": "Procedure", "description": "Case procedures" },
     "/finance/{financeId}": { "schema": "Finance", "description": "Financial records" },
-    "/documents/{documentId}": { "schema": "Document", "description": "Case documents" }
+    "/documents/{documentId}": { "schema": "Document", "description": "Case documents" },
+    "/caseNotes/{noteId}": { "schema": "CaseNote", "description": "Internal case notes" }
   }
 }

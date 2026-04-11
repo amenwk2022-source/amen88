@@ -4,6 +4,29 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>My Google AI Studio App</title>
+    <script>
+      // Fix for "Cannot set property fetch of #<Window> which has only a getter"
+      // Some libraries (like node-fetch polyfills) try to override window.fetch
+      // which can fail in certain environments where fetch is a read-only getter.
+      (function() {
+        try {
+          var originalFetch = window.fetch;
+          if (originalFetch) {
+            var descriptor = Object.getOwnPropertyDescriptor(window, 'fetch');
+            if (descriptor && !descriptor.set && descriptor.configurable) {
+              Object.defineProperty(window, 'fetch', {
+                get: function() { return originalFetch; },
+                set: function(v) { console.warn('Attempted to override window.fetch:', v); },
+                configurable: true,
+                enumerable: true
+              });
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to patch window.fetch:', e);
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

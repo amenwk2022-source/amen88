@@ -61,6 +61,11 @@ service cloud.firestore {
              data.assignedTo is string && data.status in ['pending', 'in-progress', 'completed'];
     }
 
+    function isValidCaseNote(data) {
+      return data.caseId is string && data.text is string && data.text.size() > 0 && data.text.size() < 5000 &&
+             data.date is string && data.author is string;
+    }
+
     // ===============================================================
     // Match Rules
     // ===============================================================
@@ -124,6 +129,11 @@ service cloud.firestore {
       allow create: if isAuthenticated() && isValidTask(request.resource.data) && (isAdmin() || isLawyer() || isStaff());
       allow update: if isAuthenticated() && isValidTask(request.resource.data) && (isAdmin() || isLawyer() || isStaff() || request.auth.uid == resource.data.assignedTo);
       allow delete: if isAdmin() || isLawyer();
+    }
+
+    match /caseNotes/{noteId} {
+      allow read: if isAdmin() || isLawyer() || isStaff();
+      allow write: if isAdmin() || isLawyer() || isStaff();
     }
 
     match /consultations/{consultationId} {

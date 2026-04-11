@@ -1170,50 +1170,52 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                       </div>
                     </div>
 
-                    {/* Case Notes */}
-                    <div className="space-y-4">
-                      <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                        <FileText className="w-5 h-5 text-indigo-600" />
-                        ملاحظات داخلية
-                      </h3>
-                      <div className="space-y-3">
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            placeholder="أضف ملاحظة جديدة..."
-                            className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-600 transition-all"
-                            value={newNote}
-                            onChange={(e) => setNewNote(e.target.value)}
-                            onKeyPress={(e) => e.key === 'Enter' && handleAddNote()}
-                          />
-                          <button
-                            onClick={handleAddNote}
-                            className="bg-indigo-600 text-white p-2 rounded-xl hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100"
-                          >
-                            <Plus className="w-5 h-5" />
-                          </button>
-                        </div>
-                        <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                          {caseNotes.map((note) => (
-                            <div key={note.id} className="bg-slate-50 p-3 rounded-xl border border-slate-100 group relative">
-                              <p className="text-sm text-slate-700 font-medium leading-relaxed">{note.text}</p>
-                              <div className="flex items-center justify-between mt-2">
-                                <span className="text-[10px] text-slate-400 font-bold">{note.author} - {format(parseISO(note.date), 'yyyy/MM/dd HH:mm')}</span>
-                                <button 
-                                  onClick={() => handleDeleteNote(note.id)}
-                                  className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-all"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
+                    {/* Case Notes - Internal Only */}
+                    {(user.role === 'admin' || user.role === 'lawyer' || user.role === 'staff') && (
+                      <div className="space-y-4">
+                        <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                          <FileText className="w-5 h-5 text-indigo-600" />
+                          ملاحظات داخلية
+                        </h3>
+                        <div className="space-y-3">
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              placeholder="أضف ملاحظة جديدة..."
+                              className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-600 transition-all"
+                              value={newNote}
+                              onChange={(e) => setNewNote(e.target.value)}
+                              onKeyPress={(e) => e.key === 'Enter' && handleAddNote()}
+                            />
+                            <button
+                              onClick={handleAddNote}
+                              className="bg-indigo-600 text-white p-2 rounded-xl hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100"
+                            >
+                              <Plus className="w-5 h-5" />
+                            </button>
+                          </div>
+                          <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                            {caseNotes.map((note) => (
+                              <div key={note.id} className="bg-slate-50 p-3 rounded-xl border border-slate-100 group relative">
+                                <p className="text-sm text-slate-700 font-medium leading-relaxed">{note.text}</p>
+                                <div className="flex items-center justify-between mt-2">
+                                  <span className="text-[10px] text-slate-400 font-bold">{note.author} - {format(parseISO(note.date), 'yyyy/MM/dd HH:mm')}</span>
+                                  <button 
+                                    onClick={() => handleDeleteNote(note.id)}
+                                    className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-all"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                          ))}
-                          {caseNotes.length === 0 && (
-                            <p className="text-center py-4 text-slate-400 text-xs font-bold italic">لا توجد ملاحظات مسجلة</p>
-                          )}
+                            ))}
+                            {caseNotes.length === 0 && (
+                              <p className="text-center py-4 text-slate-400 text-xs font-bold italic">لا توجد ملاحظات مسجلة</p>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
 
                     {/* Case Tasks */}
                     <div className="space-y-4">

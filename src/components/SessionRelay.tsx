@@ -494,7 +494,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
         {[
           { id: 'today', label: 'رول اليوم', icon: Clock, count: sessions.filter(s => s.date.split('T')[0] === todayStr).length },
           { id: 'upcoming', label: 'الجلسات القادمة', icon: CalendarClock, count: sessions.filter(s => s.date.split('T')[0] > todayStr).length },
-          { id: 'omitted', label: 'كاشف السهو', icon: AlertCircle, count: sessions.filter(s => s.date.split('T')[0] < realTodayStr && !s.decision).length, color: 'red' },
+          { id: 'omitted', label: 'كاشف السهو', icon: AlertCircle, count: stats.omitted, color: 'red' },
           { id: 'search', label: 'بحث بالتاريخ', icon: Search, count: 0 },
         ].map((tab) => {
           const Icon = tab.icon;

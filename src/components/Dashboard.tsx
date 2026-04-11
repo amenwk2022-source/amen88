@@ -63,6 +63,8 @@ export default function Dashboard({ user }: DashboardProps) {
   const [upcomingExpertSessions, setUpcomingExpertSessions] = useState<ExpertSession[]>([]);
   const [activeDeadlines, setActiveDeadlines] = useState<Judgment[]>([]);
   const [recentNotifications, setRecentNotifications] = useState<AppNotification[]>([]);
+  const [cases, setCases] = useState<Case[]>([]);
+  const [allSessions, setAllSessions] = useState<Session[]>([]);
   const [omittedSessions, setOmittedSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingConsultations, setPendingConsultations] = useState<ConsultationRequest[]>([]);
@@ -72,10 +74,11 @@ export default function Dashboard({ user }: DashboardProps) {
 
     // Real-time listener for cases
     const casesUnsub = onSnapshot(collection(db, 'cases'), (snapshot) => {
-      const cases = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case));
+      const fetchedCases = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case));
+      setCases(fetchedCases);
       
       // Calculate Pie Chart Data
-      const statusCounts = cases.reduce((acc: any, c) => {
+      const statusCounts = fetchedCases.reduce((acc: any, c) => {
         const status = c.status || 'active';
         acc[status] = (acc[status] || 0) + 1;
         return acc;
@@ -91,7 +94,7 @@ export default function Dashboard({ user }: DashboardProps) {
 
       const newPieData = Object.entries(statusCounts).map(([status, count]) => ({
         name: statusLabels[status] || status,
-        value: Math.round(((count as number) / cases.length) * 100)
+        value: Math.round(((count as number) / fetchedCases.length) * 100)
       }));
       setPieData(newPieData);
 
@@ -104,7 +107,7 @@ export default function Dashboard({ user }: DashboardProps) {
         last6Months.push({ name: months[m], cases: 0, monthIndex: m });
       }
 
-      cases.forEach(c => {
+      fetchedCases.forEach(c => {
         if (c.createdAt) {
           const date = new Date(c.createdAt);
           const monthIndex = date.getMonth();
@@ -116,10 +119,10 @@ export default function Dashboard({ user }: DashboardProps) {
 
       setStats(prev => ({
         ...prev,
-        totalCases: cases.length,
-        activeCases: cases.filter(c => c.status === 'active').length,
-        wonCases: cases.filter(c => c.status === 'archive').length,
-        totalClients: new Set(cases.map(c => c.clientId)).size,
+        totalCases: fetchedCases.length,
+        activeCases: fetchedCases.filter(c => c.status === 'active').length,
+        wonCases: fetchedCases.filter(c => c.status === 'archive').length,
+        totalClients: new Set(fetchedCases.map(c => c.clientId)).size,
       }));
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'cases'));
 
@@ -181,9 +184,8 @@ export default function Dashboard({ user }: DashboardProps) {
 
     // Anti-Omission
     const omittedUnsub = onSnapshot(collection(db, 'sessions'), (snapshot) => {
-      const allSessions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Session));
-      const omitted = allSessions.filter(s => s.date < today && (!s.decision || s.decision === ''));
-      setOmittedSessions(omitted.slice(0, 10));
+      const sessions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Session));
+      setAllSessions(sessions);
     }, (err) => {
       handleFirestoreError(err, OperationType.LIST, 'sessions');
     });
@@ -211,7 +213,20 @@ export default function Dashboard({ user }: DashboardProps) {
       omittedUnsub();
       consultUnsub();
     };
-  }, [user.role]);
+  }, [user.uid, user.role]);
+
+  useEffect(() => {
+    if (cases.length === 0 || allSessions.length === 0) {
+      setOmittedSessions([]);
+      return;
+    }
+    const today = new Date().toISOString().split('T')[0];
+    const omitted = allSessions.filter(s => {
+      const caseItem = cases.find(c => c.id === s.caseId);
+      return s.date < today && (!s.decision || s.decision === '') && caseItem?.status === 'active';
+    });
+    setOmittedSessions(omitted.slice(0, 10));
+  }, [cases, allSessions]);
 
   if (user.role === 'client') {
     return <ClientPortal user={user} />;
