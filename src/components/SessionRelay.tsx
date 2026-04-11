@@ -616,7 +616,16 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                       </span>
                     </td>
                     <td className="p-4 border-l border-slate-100 print:border-l-2 print:border-slate-900">
-                      <span className="text-sm font-bold text-slate-700 print:text-slate-900 print:text-base">{session.caseInfo?.clientName || '---'}</span>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-bold text-slate-700 print:text-slate-900 print:text-base">{session.caseInfo?.clientName || '---'}</span>
+                        {session.caseInfo?.clientPosition && (
+                          <span className="text-[10px] font-black text-indigo-600 print:text-slate-500">
+                            ({session.caseInfo.clientPosition === 'plaintiff' ? 'مدعي' : 
+                               session.caseInfo.clientPosition === 'defendant' ? 'مدعى عليه' :
+                               session.caseInfo.clientPosition === 'appellant' ? 'مستأنف' : 'مستأنف ضده'})
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="p-4 border-l border-slate-100 print:border-l-2 print:border-slate-900">
                       <span className="text-sm font-bold text-slate-700 print:text-slate-900 print:text-base">{session.caseInfo?.opponent || '---'}</span>
@@ -758,17 +767,33 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                         </span>
                       </td>
                       <td className="p-4 border-l border-slate-100 print:border-slate-900">
-                        <span className="text-sm font-bold text-slate-700 print:text-slate-900">
-                          {session.officeLocation || '---'}
-                        </span>
+                        <div className="flex flex-col">
+                          <span className="text-sm font-bold text-slate-700 print:text-slate-900">
+                            {session.officeLocation || '---'}
+                          </span>
+                          {session.time && (
+                            <span className="text-[10px] font-black text-indigo-600 print:text-slate-500">
+                              الساعة: {session.time}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="p-4 border-l border-slate-100 print:border-slate-900">
                         <span className="text-sm font-black text-slate-900">
                           {session.caseInfo?.caseNumber || '---'}
                         </span>
                       </td>
-                      <td className="p-4 border-l border-slate-100 print:border-slate-900">
-                        <span className="text-sm font-bold text-slate-700 print:text-slate-900">{session.caseInfo?.clientName || '---'}</span>
+                      <td className="p-4 border-l border-slate-100 print:border-l-2 print:border-slate-900">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-bold text-slate-700 print:text-slate-900 print:text-base">{session.caseInfo?.clientName || '---'}</span>
+                          {session.caseInfo?.clientPosition && (
+                            <span className="text-[10px] font-black text-emerald-600 print:text-slate-500">
+                              ({session.caseInfo.clientPosition === 'plaintiff' ? 'مدعي' : 
+                                 session.caseInfo.clientPosition === 'defendant' ? 'مدعى عليه' :
+                                 session.caseInfo.clientPosition === 'appellant' ? 'مستأنف' : 'مستأنف ضده'})
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="p-4 border-l border-slate-100 print:border-slate-900">
                         <span className="text-sm font-bold text-slate-700 print:text-slate-900">{session.caseInfo?.opponent || '---'}</span>

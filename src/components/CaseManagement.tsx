@@ -58,6 +58,7 @@ export default function CaseManagement({ user }: CaseManagementProps) {
   const [sessionDate, setSessionDate] = useState('');
   const [sessionDecision, setSessionDecision] = useState('');
   const [sessionNextDate, setSessionNextDate] = useState('');
+  const [editingSession, setEditingSession] = useState<any | null>(null);
   const caseRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
@@ -264,21 +265,52 @@ export default function CaseManagement({ user }: CaseManagementProps) {
     if (!selectedCaseForSession || !sessionDate) return;
 
     try {
-      await addDoc(collection(db, 'sessions'), {
+      const sessionDataToSave = {
         caseId: selectedCaseForSession.id,
         date: sessionDate,
         decision: sessionDecision,
         nextDate: sessionNextDate,
         lawyerId: selectedCaseForSession.lawyerId || '',
-        createdAt: new Date().toISOString()
-      });
+        updatedAt: new Date().toISOString()
+      };
+
+      if (editingSession) {
+        await updateDoc(doc(db, 'sessions', editingSession.id), sessionDataToSave);
+      } else {
+        await addDoc(collection(db, 'sessions'), {
+          ...sessionDataToSave,
+          createdAt: new Date().toISOString()
+        });
+      }
+
       setIsSessionModalOpen(false);
       setSessionDate('');
       setSessionDecision('');
       setSessionNextDate('');
       setSelectedCaseForSession(null);
+      setEditingSession(null);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'sessions');
+    }
+  };
+
+  const handleEditSession = (session: any) => {
+    if (user.role === 'client') return;
+    setEditingSession(session);
+    setSessionDate(session.date);
+    setSessionDecision(session.decision || '');
+    setSessionNextDate(session.nextDate || '');
+    setSelectedCaseForSession(cases.find(c => c.id === session.caseId) || null);
+    setIsSessionModalOpen(true);
+  };
+
+  const handleDeleteSession = async (sessionId: string) => {
+    if (user.role === 'client') return;
+    if (!window.confirm('هل أنت متأكد من حذف هذه الجلسة؟')) return;
+    try {
+      await deleteDoc(doc(db, 'sessions', sessionId));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'sessions');
     }
   };
 
@@ -740,6 +772,12 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                       <option>محكمة الجهراء</option>
                       <option>محكمة الأحمدي</option>
                       <option>محكمة مبارك الكبير</option>
+                      <option>أسرة حولي</option>
+                      <option>أسرة العاصمة</option>
+                      <option>أسرة مبارك الكبير</option>
+                      <option>أسرة الأحمدي</option>
+                      <option>أسرة الجهراء</option>
+                      <option>أسرة الفروانية</option>
                     </select>
                   </div>
                   <div className="space-y-2">
@@ -875,8 +913,21 @@ export default function CaseManagement({ user }: CaseManagementProps) {
               className="relative bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
             >
               <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-                <h2 className="text-xl font-black text-slate-900">إضافة جلسة جديدة</h2>
-                <button onClick={() => setIsSessionModalOpen(false)} className="p-2 hover:bg-white rounded-xl transition-all">
+                <div>
+                  <h2 className="text-xl font-black text-slate-900">
+                    {editingSession ? 'تعديل بيانات الجلسة' : 'إضافة جلسة جديدة'}
+                  </h2>
+                  <p className="text-sm text-slate-500 font-medium">
+                    {editingSession ? 'قم بتحديث بيانات الجلسة المسجلة' : 'قم بتعبئة بيانات الجلسة القادمة'}
+                  </p>
+                </div>
+                <button 
+                  onClick={() => {
+                    setIsSessionModalOpen(false);
+                    setEditingSession(null);
+                  }} 
+                  className="p-2 hover:bg-white rounded-xl transition-all"
+                >
                   <X className="w-5 h-5 text-slate-400" />
                 </button>
               </div>
@@ -915,11 +966,14 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                     className="flex-1 bg-indigo-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
                   >
                     <Check className="w-5 h-5" />
-                    إضافة الجلسة
+                    {editingSession ? 'حفظ التعديلات' : 'إضافة الجلسة'}
                   </button>
                   <button
                     type="button"
-                    onClick={() => setIsSessionModalOpen(false)}
+                    onClick={() => {
+                      setIsSessionModalOpen(false);
+                      setEditingSession(null);
+                    }}
                     className="px-8 bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl hover:bg-slate-200 transition-all"
                   >
                     إلغاء
@@ -1017,7 +1071,31 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                           )} />
                           <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all">
                             <div className="flex items-center justify-between mb-2">
-                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{event.timelineDate}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{event.timelineDate}</span>
+                                {event.timelineType === 'session' && isLawyer && (
+                                  <div className="flex items-center gap-1">
+                                    <button 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleEditSession(event);
+                                      }}
+                                      className="p-1 text-slate-400 hover:text-indigo-600 transition-all"
+                                    >
+                                      <Edit2 className="w-3 h-3" />
+                                    </button>
+                                    <button 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteSession(event.id);
+                                      }}
+                                      className="p-1 text-slate-400 hover:text-red-600 transition-all"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                               <span className={cn(
                                 "px-2 py-0.5 rounded-lg text-[10px] font-black uppercase",
                                 event.timelineType === 'session' ? "bg-indigo-50 text-indigo-600" : 

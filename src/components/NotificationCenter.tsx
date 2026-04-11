@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { format, isWithinInterval, addDays, startOfDay, endOfDay, parseISO, differenceInDays } from 'date-fns';
 import { arSA } from 'date-fns/locale';
 import { cn } from '../lib/utils';
+import { useNavigate } from 'react-router-dom';
 
 interface NotificationCenterProps {
   isOpen: boolean;
@@ -15,6 +16,7 @@ interface NotificationCenterProps {
 }
 
 export default function NotificationCenter({ isOpen, onClose, user }: NotificationCenterProps) {
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -79,6 +81,38 @@ export default function NotificationCenter({ isOpen, onClose, user }: Notificati
     }
   };
 
+  const handleNotificationClick = async (notif: AppNotification) => {
+    await markAsRead(notif.id);
+    onClose();
+
+    if (notif.link) {
+      navigate(notif.link);
+      return;
+    }
+
+    // Default navigation based on type
+    switch (notif.type) {
+      case 'session':
+      case 'deadline':
+        if (notif.relatedId) {
+          // If it's a session or judgment, we might need to find the caseId
+          // For simplicity, we can navigate to cases or a specific case if we store caseId in metadata
+          navigate(`/cases?id=${notif.relatedId}`);
+        } else {
+          navigate('/cases');
+        }
+        break;
+      case 'expert':
+        navigate('/expert-sessions');
+        break;
+      case 'task':
+        navigate('/tasks');
+        break;
+      default:
+        break;
+    }
+  };
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -132,7 +166,7 @@ export default function NotificationCenter({ isOpen, onClose, user }: Notificati
                   <motion.div
                     layout
                     key={notif.id}
-                    onClick={() => markAsRead(notif.id)}
+                    onClick={() => handleNotificationClick(notif)}
                     className={cn(
                       "p-4 rounded-2xl border transition-all cursor-pointer relative group",
                       notif.isRead ? "bg-white border-slate-100 opacity-60" : "bg-white border-indigo-100 shadow-sm ring-1 ring-indigo-50"
@@ -216,9 +250,10 @@ export async function generateNotifications(userId: string, role: string) {
             title: 'جلسة قادمة قريباً',
             message: `لديك جلسة في قضية رقم ${session.caseId} بتاريخ ${format(sessionDate, 'dd MMMM', { locale: arSA })}`,
             type: 'session',
-            relatedId: session.id,
+            relatedId: session.caseId, // Use caseId for navigation
             isRead: false,
-            date: new Date().toISOString()
+            date: new Date().toISOString(),
+            link: `/cases?id=${session.caseId}`
           });
         }
       }
@@ -248,7 +283,8 @@ export async function generateNotifications(userId: string, role: string) {
             type: 'expert',
             relatedId: session.id,
             isRead: false,
-            date: new Date().toISOString()
+            date: new Date().toISOString(),
+            link: '/expert-sessions'
           });
         }
       }
@@ -277,7 +313,8 @@ export async function generateNotifications(userId: string, role: string) {
               type: 'task',
               relatedId: task.id,
               isRead: false,
-              date: new Date().toISOString()
+              date: new Date().toISOString(),
+              link: '/tasks'
             });
           }
         }
@@ -311,9 +348,10 @@ export async function generateNotifications(userId: string, role: string) {
             title: 'اقتراب موعد الاستئناف',
             message: `بقي ${daysLeft} أيام على انتهاء مدة الاستئناف في قضية رقم ${judgment.caseId}`,
             type: 'deadline',
-            relatedId: judgment.id,
+            relatedId: judgment.caseId,
             isRead: false,
-            date: new Date().toISOString()
+            date: new Date().toISOString(),
+            link: `/cases?id=${judgment.caseId}`
           });
         }
       }

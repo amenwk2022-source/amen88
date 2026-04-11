@@ -23,6 +23,7 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
   const [formData, setFormData] = useState({
     date: '',
+    time: '',
     expertName: '',
     officeLocation: '',
     notes: ''
@@ -64,6 +65,7 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
       await addDoc(collection(db, 'expertSessions'), {
         caseId: selectedCase.id,
         date: formData.date,
+        time: formData.time,
         expertName: formData.expertName,
         officeLocation: formData.officeLocation,
         status: 'pending',
@@ -71,7 +73,7 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
         createdAt: new Date().toISOString()
       });
       setIsModalOpen(false);
-      setFormData({ date: '', expertName: '', officeLocation: '', notes: '' });
+      setFormData({ date: '', time: '', expertName: '', officeLocation: '', notes: '' });
       setSelectedCase(null);
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'expertSessions');
@@ -165,6 +167,11 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
                 <div className="flex items-center gap-3 text-sm font-bold text-slate-600">
                   <Calendar className="w-4 h-4 text-slate-400" />
                   {format(sessionDate, 'EEEE, dd MMMM yyyy', { locale: arSA })}
+                  {session.time && (
+                    <span className="bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-lg text-[10px] mr-2">
+                      الساعة: {session.time}
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-3 text-sm font-bold text-slate-600">
                   <Users className="w-4 h-4 text-slate-400" />
@@ -340,15 +347,24 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-bold text-slate-700">اسم الخبير</label>
+                      <label className="text-sm font-bold text-slate-700">الساعة</label>
                       <input
-                        type="text"
-                        placeholder="اسم الخبير..."
+                        type="time"
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 transition-all"
-                        value={formData.expertName}
-                        onChange={(e) => setFormData({ ...formData, expertName: e.target.value })}
+                        value={formData.time}
+                        onChange={(e) => setFormData({ ...formData, time: e.target.value })}
                       />
                     </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">اسم الخبير</label>
+                    <input
+                      type="text"
+                      placeholder="اسم الخبير..."
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 transition-all"
+                      value={formData.expertName}
+                      onChange={(e) => setFormData({ ...formData, expertName: e.target.value })}
+                    />
                   </div>
 
                   <div className="space-y-2">

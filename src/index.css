@@ -76,5 +76,14 @@ body {
     .print\:divide-slate-900 > * + * {
       border-top-color: #000 !important;
     }
+    table {
+      border-collapse: collapse !important;
+    }
+    th, td {
+      border-color: #000 !important;
+    }
+    .print\:shadow-none {
+      box-shadow: none !important;
+    }
   }
 }

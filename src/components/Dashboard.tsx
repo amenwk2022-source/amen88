@@ -16,7 +16,8 @@ import {
   FileText,
   Gavel,
   Bell,
-  MessageSquare
+  MessageSquare,
+  Printer
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import {
@@ -396,7 +397,16 @@ export default function Dashboard({ user }: DashboardProps) {
               <CalendarClock className="w-5 h-5 text-indigo-600" />
               الجلسات القادمة
             </h3>
-            <button className="text-indigo-600 text-sm font-bold hover:underline">عرض الكل</button>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => window.print()}
+                className="p-2 hover:bg-slate-100 rounded-lg transition-all text-slate-400 hover:text-indigo-600"
+                title="طباعة"
+              >
+                <Printer className="w-4 h-4" />
+              </button>
+              <button className="text-indigo-600 text-sm font-bold hover:underline">عرض الكل</button>
+            </div>
           </div>
           <div className="space-y-4">
             {upcomingSessions.length > 0 ? upcomingSessions.map((session, i) => (
@@ -425,7 +435,16 @@ export default function Dashboard({ user }: DashboardProps) {
               <Users className="w-5 h-5 text-indigo-600" />
               جلسات الخبراء
             </h3>
-            <button className="text-indigo-600 text-sm font-bold hover:underline">عرض الكل</button>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => window.print()}
+                className="p-2 hover:bg-slate-100 rounded-lg transition-all text-slate-400 hover:text-indigo-600"
+                title="طباعة"
+              >
+                <Printer className="w-4 h-4" />
+              </button>
+              <button className="text-indigo-600 text-sm font-bold hover:underline">عرض الكل</button>
+            </div>
           </div>
           <div className="space-y-4">
             {upcomingExpertSessions.length > 0 ? upcomingExpertSessions.map((session, i) => (

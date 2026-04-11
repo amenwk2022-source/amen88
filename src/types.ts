@@ -89,6 +89,7 @@ export interface ExpertSession {
   id: string;
   caseId: string;
   date: string;
+  time?: string;
   expertName: string;
   officeLocation: string;
   status: 'pending' | 'attended' | 'postponed';

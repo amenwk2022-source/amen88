@@ -36,6 +36,8 @@ export default function Tasks({ user }: TasksProps) {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [caseSearchQuery, setCaseSearchQuery] = useState('');
+  const [showCaseDropdown, setShowCaseDropdown] = useState(false);
 
   const [formData, setFormData] = useState<Partial<Task>>({
     title: '',
@@ -91,6 +93,7 @@ export default function Tasks({ user }: TasksProps) {
       }
       setIsModalOpen(false);
       setEditingTask(null);
+      setCaseSearchQuery('');
       setFormData({
         title: '',
         description: '',
@@ -133,6 +136,14 @@ export default function Tasks({ user }: TasksProps) {
     return matchesSearch && matchesStatus && matchesCase;
   });
 
+  const filteredCasesForSearch = cases.filter(c => 
+    c.caseNumber?.toLowerCase().includes(caseSearchQuery.toLowerCase()) || 
+    c.clientName?.toLowerCase().includes(caseSearchQuery.toLowerCase()) ||
+    c.autoNumber?.toLowerCase().includes(caseSearchQuery.toLowerCase())
+  );
+
+  const selectedCase = cases.find(c => c.id === formData.caseId);
+
   return (
     <div className="space-y-8 rtl" dir="rtl">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -144,6 +155,7 @@ export default function Tasks({ user }: TasksProps) {
           <button
             onClick={() => {
               setEditingTask(null);
+              setCaseSearchQuery('');
               setFormData({
                 title: '',
                 description: '',
@@ -240,6 +252,7 @@ export default function Tasks({ user }: TasksProps) {
                         onClick={() => {
                           setEditingTask(task);
                           setFormData(task);
+                          setCaseSearchQuery('');
                           setIsModalOpen(true);
                         }}
                         className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
@@ -313,7 +326,10 @@ export default function Tasks({ user }: TasksProps) {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setIsModalOpen(false)}
+              onClick={() => {
+                setIsModalOpen(false);
+                setCaseSearchQuery('');
+              }}
               className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
             />
             <motion.div
@@ -326,7 +342,10 @@ export default function Tasks({ user }: TasksProps) {
                 <h2 className="text-xl font-black text-slate-900">
                   {editingTask ? 'تعديل المهمة' : 'إضافة مهمة جديدة'}
                 </h2>
-                <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-white rounded-xl transition-all">
+                <button onClick={() => {
+                  setIsModalOpen(false);
+                  setCaseSearchQuery('');
+                }} className="p-2 hover:bg-white rounded-xl transition-all">
                   <X className="w-5 h-5 text-slate-400" />
                 </button>
               </div>
@@ -390,18 +409,56 @@ export default function Tasks({ user }: TasksProps) {
                       ))}
                     </select>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-2 relative">
                     <label className="text-sm font-bold text-slate-700">القضية المرتبطة</label>
-                    <select
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 outline-none transition-all"
-                      value={formData.caseId}
-                      onChange={(e) => setFormData({ ...formData, caseId: e.target.value })}
-                    >
-                      <option value="">بدون قضية</option>
-                      {cases.map(c => (
-                        <option key={c.id} value={c.id}>{c.caseNumber} - {c.clientName}</option>
-                      ))}
-                    </select>
+                    <div className="relative">
+                      <Search className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="ابحث بالاسم أو الرقم..."
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-10 pl-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 outline-none transition-all"
+                        value={caseSearchQuery || (selectedCase ? `${selectedCase.caseNumber} - ${selectedCase.clientName}` : '')}
+                        onFocus={() => setShowCaseDropdown(true)}
+                        onChange={(e) => {
+                          setCaseSearchQuery(e.target.value);
+                          setShowCaseDropdown(true);
+                        }}
+                      />
+                    </div>
+                    
+                    {showCaseDropdown && (
+                      <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-48 overflow-y-auto">
+                        <button
+                          type="button"
+                          className="w-full text-right px-4 py-2 text-sm hover:bg-slate-50 font-bold text-slate-500 border-b border-slate-50"
+                          onClick={() => {
+                            setFormData({ ...formData, caseId: '' });
+                            setCaseSearchQuery('');
+                            setShowCaseDropdown(false);
+                          }}
+                        >
+                          بدون قضية
+                        </button>
+                        {filteredCasesForSearch.map(c => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            className="w-full text-right px-4 py-3 text-sm hover:bg-indigo-50 transition-all border-b border-slate-50 last:border-0"
+                            onClick={() => {
+                              setFormData({ ...formData, caseId: c.id });
+                              setCaseSearchQuery(`${c.caseNumber} - ${c.clientName}`);
+                              setShowCaseDropdown(false);
+                            }}
+                          >
+                            <div className="font-black text-slate-900">{c.caseNumber}</div>
+                            <div className="text-[10px] text-slate-500">{c.clientName} {c.autoNumber ? `(${c.autoNumber})` : ''}</div>
+                          </button>
+                        ))}
+                        {filteredCasesForSearch.length === 0 && (
+                          <div className="p-4 text-center text-xs text-slate-400 font-bold">لا توجد نتائج</div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -415,7 +472,10 @@ export default function Tasks({ user }: TasksProps) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setIsModalOpen(false)}
+                    onClick={() => {
+                      setIsModalOpen(false);
+                      setCaseSearchQuery('');
+                    }}
                     className="px-8 bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl hover:bg-slate-200 transition-all"
                   >
                     إلغاء

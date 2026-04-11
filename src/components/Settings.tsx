@@ -58,7 +58,20 @@ export default function Settings({ user }: SettingsProps) {
     officeEmail: 'info@lawyer-office.com',
     currency: 'د.ك',
     caseTypes: ['مدني', 'جنائي', 'تجاري', 'أحوال شخصية', 'عمالي', 'إداري'],
-    courtNames: ['قصر العدل', 'محكمة الرقعي', 'محكمة حولي', 'محكمة الأحمدي', 'محكمة الفروانية', 'محكمة الجهراء'],
+    courtNames: [
+      'قصر العدل', 
+      'محكمة الرقعي', 
+      'محكمة حولي', 
+      'محكمة الأحمدي', 
+      'محكمة الفروانية', 
+      'محكمة الجهراء',
+      'أسرة حولي',
+      'أسرة العاصمة',
+      'أسرة مبارك الكبير',
+      'أسرة الأحمدي',
+      'أسرة الجهراء',
+      'أسرة الفروانية'
+    ],
   });
 
   // Users Management State
@@ -71,7 +84,33 @@ export default function Settings({ user }: SettingsProps) {
       try {
         const settingsSnap = await getDoc(doc(db, 'settings', 'global'));
         if (settingsSnap.exists()) {
-          setSystemSettings(settingsSnap.data() as SystemSettings);
+          const data = settingsSnap.data() as SystemSettings;
+          // Ensure new family courts are added if missing
+          const newCourts = [
+            'أسرة حولي',
+            'أسرة العاصمة',
+            'أسرة مبارك الكبير',
+            'أسرة الأحمدي',
+            'أسرة الجهراء',
+            'أسرة الفروانية'
+          ];
+          const updatedCourts = [...data.courtNames];
+          let changed = false;
+          newCourts.forEach(court => {
+            if (!updatedCourts.includes(court)) {
+              updatedCourts.push(court);
+              changed = true;
+            }
+          });
+
+          if (changed) {
+            const updatedSettings = { ...data, courtNames: updatedCourts };
+            setSystemSettings(updatedSettings);
+            // Auto-save the new courts to DB
+            await setDoc(doc(db, 'settings', 'global'), updatedSettings);
+          } else {
+            setSystemSettings(data);
+          }
         } else {
           // Initialize default settings if not exists
           await setDoc(doc(db, 'settings', 'global'), systemSettings);
