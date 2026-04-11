@@ -16,6 +16,13 @@ const STATUS_MAP: Record<CaseStatus, { label: string; color: string; icon: any }
   'judgment': { label: 'حكم قضائي', color: 'amber', icon: Gavel },
 };
 
+const POSITION_LABELS: Record<string, string> = {
+  plaintiff: 'مدعي',
+  defendant: 'مدعى عليه',
+  appellant: 'مستأنف',
+  appellee: 'مستأنف ضده'
+};
+
 interface CaseManagementProps {
   user: UserProfile;
 }
@@ -49,6 +56,8 @@ export default function CaseManagement({ user }: CaseManagementProps) {
   const [caseTasks, setCaseTasks] = useState<any[]>([]);
   const [newNote, setNewNote] = useState('');
   const [sessionDate, setSessionDate] = useState('');
+  const [sessionDecision, setSessionDecision] = useState('');
+  const [sessionNextDate, setSessionNextDate] = useState('');
   const caseRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
@@ -134,7 +143,8 @@ export default function CaseManagement({ user }: CaseManagementProps) {
     autoNumber: '',
     opponent: '',
     caseType: '',
-    status: 'pre-filing'
+    status: 'pre-filing',
+    clientPosition: 'plaintiff'
   });
 
   useEffect(() => {
@@ -220,7 +230,7 @@ export default function CaseManagement({ user }: CaseManagementProps) {
       }
       setIsModalOpen(false);
       setEditingCase(null);
-      setFormData({ clientId: '', status: 'pre-filing' });
+      setFormData({ clientId: '', status: 'pre-filing', clientPosition: 'plaintiff' });
     } catch (error) {
       console.error('Error saving case:', error);
     }
@@ -257,13 +267,15 @@ export default function CaseManagement({ user }: CaseManagementProps) {
       await addDoc(collection(db, 'sessions'), {
         caseId: selectedCaseForSession.id,
         date: sessionDate,
-        decision: '',
-        nextDate: '',
+        decision: sessionDecision,
+        nextDate: sessionNextDate,
         lawyerId: selectedCaseForSession.lawyerId || '',
         createdAt: new Date().toISOString()
       });
       setIsSessionModalOpen(false);
       setSessionDate('');
+      setSessionDecision('');
+      setSessionNextDate('');
       setSelectedCaseForSession(null);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'sessions');
@@ -470,7 +482,14 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                 <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm font-medium text-slate-500">
                   <div className="flex items-center gap-2">
                     <span className="text-slate-400">الموكل:</span>
-                    <span className="text-slate-900 font-bold">{c.clientName}</span>
+                    <span className="text-slate-900 font-bold">
+                      {c.clientName} 
+                      {c.clientPosition && (
+                        <span className="mr-1 text-[10px] bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 text-slate-500">
+                          ({POSITION_LABELS[c.clientPosition]})
+                        </span>
+                      )}
+                    </span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-slate-400">الخصم:</span>
@@ -567,7 +586,12 @@ export default function CaseManagement({ user }: CaseManagementProps) {
             <div className="space-y-4">
               <div className="border-b border-slate-200 pb-2">
                 <p className="text-xs font-black text-slate-400 uppercase mb-1">الموكل</p>
-                <p className="text-lg font-bold text-slate-900">{selectedCaseDetails.clientName}</p>
+                <p className="text-lg font-bold text-slate-900">
+                  {selectedCaseDetails.clientName}
+                  {selectedCaseDetails.clientPosition && (
+                    <span className="mr-2 text-sm text-slate-500">({POSITION_LABELS[selectedCaseDetails.clientPosition]})</span>
+                  )}
+                </p>
               </div>
               <div className="border-b border-slate-200 pb-2">
                 <p className="text-xs font-black text-slate-400 uppercase mb-1">الخصم</p>
@@ -772,8 +796,31 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                       <option>إيجارات</option>
                       <option>عمالي</option>
                       <option>جنائي</option>
+                      <option>استئناف</option>
                     </select>
                   </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">صفة الموكل</label>
+                    <select
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                      value={formData.clientPosition}
+                      onChange={(e) => setFormData({ ...formData, clientPosition: e.target.value as any })}
+                    >
+                      {formData.caseType === 'استئناف' ? (
+                        <>
+                          <option value="appellant">مستأنف</option>
+                          <option value="appellee">مستأنف ضده</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="plaintiff">مدعي</option>
+                          <option value="defendant">مدعى عليه</option>
+                        </>
+                      )}
+                    </select>
+                  </div>
+
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-slate-700">حالة القضية</label>
                     <select
@@ -844,6 +891,24 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                     onChange={(e) => setSessionDate(e.target.value)}
                   />
                 </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-700">القرار (اختياري)</label>
+                  <textarea
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                    value={sessionDecision}
+                    onChange={(e) => setSessionDecision(e.target.value)}
+                    placeholder="أدخل قرار الجلسة إن وجد..."
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-700">تاريخ الجلسة القادمة (اختياري)</label>
+                  <input
+                    type="date"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                    value={sessionNextDate}
+                    onChange={(e) => setSessionNextDate(e.target.value)}
+                  />
+                </div>
                 <div className="pt-4 flex gap-4">
                   <button
                     type="submit"
@@ -890,7 +955,14 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                   </div>
                   <div>
                     <h2 className="text-xl font-black text-slate-900">تفاصيل القضية: {selectedCaseDetails.caseNumber}</h2>
-                    <p className="text-sm text-slate-500 font-bold">{selectedCaseDetails.clientName}</p>
+                    <p className="text-sm text-slate-500 font-bold">
+                      {selectedCaseDetails.clientName}
+                      {selectedCaseDetails.clientPosition && (
+                        <span className="mr-2 px-2 py-0.5 bg-slate-100 rounded-lg text-xs">
+                          ({POSITION_LABELS[selectedCaseDetails.clientPosition]})
+                        </span>
+                      )}
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">

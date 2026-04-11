@@ -4,7 +4,7 @@ import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useNavigate } from 'react-router-dom';
 import { CalendarClock, ArrowRightLeft, AlertCircle, CheckCircle2, Clock, Search, Filter, Download, MessageSquare, Save, X, Scale, FileText, ImageIcon, Trash2, Printer, CalendarDays, CheckCircle, XCircle, Plus, Edit2, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Session, Case, UserProfile } from '../types';
+import { Session, Case, UserProfile, ExpertSession } from '../types';
 import { cn } from '../lib/utils';
 import { format, isPast, isToday, isFuture, addDays } from 'date-fns';
 import { arSA } from 'date-fns/locale';
@@ -18,6 +18,7 @@ interface SessionRelayProps {
 export default function SessionRelay({ user }: SessionRelayProps) {
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [expertSessions, setExpertSessions] = useState<ExpertSession[]>([]);
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'today' | 'upcoming' | 'omitted' | 'search'>('today');
@@ -60,9 +61,14 @@ export default function SessionRelay({ user }: SessionRelayProps) {
       setCases(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case)));
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'cases'));
 
+    const expertUnsub = onSnapshot(collection(db, 'expertSessions'), (snapshot) => {
+      setExpertSessions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExpertSession)));
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'expertSessions'));
+
     return () => {
       unsub();
       casesUnsub();
+      expertUnsub();
     };
   }, [user.uid, user.role]);
 
@@ -330,11 +336,23 @@ export default function SessionRelay({ user }: SessionRelayProps) {
   const courts = ['ALL', ...new Set(cases.map(c => c.court).filter(Boolean))];
 
   const displayDate = activeTab === 'search' ? new Date(selectedDate) : effectiveToday;
+  const displayDateStr = displayDate.toISOString().split('T')[0];
+
+  const filteredExpertSessions = expertSessions
+    .map(s => ({
+      ...s,
+      caseInfo: cases.find(c => c.id === s.caseId)
+    }))
+    .filter(s => {
+      const sDate = s.date.split('T')[0];
+      const courtMatch = selectedCourt === 'ALL' || s.caseInfo?.court === selectedCourt;
+      return sDate === displayDateStr && s.caseInfo && courtMatch;
+    });
 
   const stats = {
     today: sessions.filter(s => s.date.split('T')[0] === todayStr).length,
     upcoming: sessions.filter(s => s.date.split('T')[0] > todayStr).length,
-    omitted: sessions.filter(s => s.date.split('T')[0] < realTodayStr && !s.decision && s.caseInfo?.status === 'active').length,
+    omitted: allSessionsWithCase.filter(s => s.date.split('T')[0] < realTodayStr && !s.decision && s.caseInfo?.status === 'active').length,
   };
 
   const formatDate = (date: Date) => {
@@ -522,58 +540,53 @@ export default function SessionRelay({ user }: SessionRelayProps) {
       )}
 
       {/* Sessions List - Formal Table */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden print:border-slate-900 print:rounded-none">
+      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden print:border-none print:rounded-none print:shadow-none">
         
         {/* Print Header */}
-        <div className="hidden print:block p-10 border-b-2 border-slate-900 text-center bg-white">
-          <div className="flex justify-between items-start mb-8">
+        <div className="hidden print:block p-10 border-b-4 border-slate-900 text-center bg-white">
+          <div className="flex justify-between items-center mb-10">
              <div className="text-right">
-                <h2 className="font-black text-2xl text-slate-900">مكتب المحامي محمد امين علي الصايغ</h2>
-                <p className="text-sm text-slate-500 font-bold">للمحاماة والاستشارات القانونية</p>
-                <p className="text-[10px] text-slate-400 mt-1">دولة الكويت - برج التجارية - الدور 25</p>
+                <h2 className="font-black text-3xl text-slate-900 mb-2">مكتب المحامي محمد امين علي الصايغ</h2>
+                <p className="text-lg text-slate-600 font-bold">للمحاماة والاستشارات القانونية</p>
+                <p className="text-xs text-slate-400 mt-2">دولة الكويت - برج التجارية - الدور 25</p>
              </div>
-             <div className="text-left">
-                <div className="bg-slate-900 text-white p-4 rounded-xl mb-2">
-                  <Scale className="w-8 h-8" />
+             <div className="text-left flex flex-col items-end">
+                <div className="bg-slate-900 text-white p-5 rounded-2xl mb-4 shadow-lg">
+                  <Scale className="w-10 h-10" />
                 </div>
-                <p className="font-bold text-slate-900 text-sm">التاريخ: {new Date().toLocaleDateString('ar-EG')}</p>
+                <p className="font-black text-slate-900 text-lg">التاريخ: {new Date().toLocaleDateString('ar-EG')}</p>
              </div>
           </div>
           
-          <div className="relative mb-8">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-slate-300"></div>
-            </div>
-            <div className="relative flex justify-center">
-              <h1 className="text-3xl font-black bg-white px-10 py-2 border-2 border-slate-900 rounded-2xl shadow-sm">
-                رول جلسات: {formatDate(displayDate)}
-              </h1>
-            </div>
+          <div className="mb-10">
+            <h1 className="text-4xl font-black bg-slate-100 inline-block px-16 py-5 border-4 border-slate-900 rounded-3xl shadow-sm">
+              رول جلسات: {formatDate(displayDate)}
+            </h1>
           </div>
           
           {selectedCourt !== 'ALL' && (
-            <div className="flex justify-center gap-4 mb-4">
-              <span className="bg-indigo-50 text-indigo-900 px-6 py-2 rounded-full border border-indigo-200 font-black text-lg">
+            <div className="flex justify-center mb-6">
+              <span className="bg-white text-slate-900 px-8 py-3 rounded-2xl border-2 border-slate-900 font-black text-xl">
                 المحكمة: {selectedCourt}
               </span>
             </div>
           )}
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-right border-collapse">
+        <div className="overflow-x-auto print:overflow-visible">
+          <table className="w-full text-right border-collapse print:border-2 print:border-slate-900">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 print:bg-slate-100 print:border-slate-900">
-                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 w-12 text-center print:text-slate-900 print:border-slate-900">#</th>
-                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">المحكمة</th>
-                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">الدائرة</th>
-                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">رقم القضية</th>
-                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">الموكل</th>
-                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">الخصم</th>
-                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest print:text-slate-900">القرار</th>
+              <tr className="bg-slate-50 border-b border-slate-200 print:bg-slate-100 print:border-b-2 print:border-slate-900">
+                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 w-12 text-center print:text-slate-900 print:border-l-2 print:border-slate-900 print:text-sm">#</th>
+                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-l-2 print:border-slate-900 print:text-sm">المحكمة</th>
+                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-l-2 print:border-slate-900 print:text-sm">الدائرة</th>
+                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-l-2 print:border-slate-900 print:text-sm">رقم القضية</th>
+                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-l-2 print:border-slate-900 print:text-sm">الموكل</th>
+                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-l-2 print:border-slate-900 print:text-sm">الخصم</th>
+                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest print:text-slate-900 print:text-sm">القرار</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 print:divide-slate-900">
+            <tbody className="divide-y divide-slate-100 print:divide-y-2 print:divide-slate-900">
               {filteredSessions.length > 0 ? (
                 filteredSessions.map((session, index) => (
                   <motion.tr
@@ -584,39 +597,40 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                       session.decision ? "bg-emerald-50/30 print:bg-transparent" : ""
                     )}
                   >
-                    <td className="p-4 text-sm font-black text-slate-400 text-center border-l border-slate-100 print:text-slate-900 print:border-slate-900">
+                    <td className="p-4 text-sm font-black text-slate-400 text-center border-l border-slate-100 print:text-slate-900 print:border-l-2 print:border-slate-900 print:text-base">
                       {index + 1}
                     </td>
-                    <td className="p-4 border-l border-slate-100 print:border-slate-900">
-                      <span className="text-sm font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-100 print:bg-transparent print:border-none print:text-slate-900">
+                    <td className="p-4 border-l border-slate-100 print:border-l-2 print:border-slate-900">
+                      <span className="text-sm font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-100 print:bg-transparent print:border-none print:text-slate-900 print:text-base">
                         {session.caseInfo?.court || '---'}
                       </span>
                     </td>
-                    <td className="p-4 border-l border-slate-100 print:border-slate-900">
-                      <span className="text-sm font-bold text-slate-700 print:text-slate-900">
+                    <td className="p-4 border-l border-slate-100 print:border-l-2 print:border-slate-900">
+                      <span className="text-sm font-bold text-slate-700 print:text-slate-900 print:text-base">
                         {session.caseInfo?.circuit || '---'}
                       </span>
                     </td>
-                    <td className="p-4 border-l border-slate-100 print:border-slate-900">
-                      <span className="text-sm font-black text-slate-900">
+                    <td className="p-4 border-l border-slate-100 print:border-l-2 print:border-slate-900">
+                      <span className="text-sm font-black text-slate-900 print:text-base">
                         {session.caseInfo?.caseNumber || '---'} / {session.caseInfo?.year || '----'}
                       </span>
                     </td>
-                    <td className="p-4 border-l border-slate-100 print:border-slate-900">
-                      <span className="text-sm font-bold text-slate-700 print:text-slate-900">{session.caseInfo?.clientName || '---'}</span>
+                    <td className="p-4 border-l border-slate-100 print:border-l-2 print:border-slate-900">
+                      <span className="text-sm font-bold text-slate-700 print:text-slate-900 print:text-base">{session.caseInfo?.clientName || '---'}</span>
                     </td>
-                    <td className="p-4 border-l border-slate-100 print:border-slate-900">
-                      <span className="text-sm font-bold text-slate-700 print:text-slate-900">{session.caseInfo?.opponent || '---'}</span>
+                    <td className="p-4 border-l border-slate-100 print:border-l-2 print:border-slate-900">
+                      <span className="text-sm font-bold text-slate-700 print:text-slate-900 print:text-base">{session.caseInfo?.opponent || '---'}</span>
                     </td>
-                    <td className="p-4">
+                    <td className="p-4 print:text-base">
                       <div className="flex flex-col gap-2">
                         {session.decision ? (
                           <div className="flex items-start gap-3">
-                            <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5 print:text-slate-900" />
+                            <CheckCircle className="hidden print:block w-5 h-5 text-slate-900 shrink-0 mt-0.5" />
+                            <CheckCircle className="print:hidden w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                             <div>
-                              <p className="text-sm font-bold text-emerald-900 print:text-slate-900 leading-relaxed">{session.decision}</p>
+                              <p className="text-sm font-bold text-emerald-900 print:text-slate-900 leading-relaxed print:text-base">{session.decision}</p>
                               {session.nextDate && (
-                                <p className="text-[10px] text-emerald-600 font-black mt-1 print:text-slate-600">
+                                <p className="text-[10px] text-emerald-600 font-black mt-1 print:text-slate-600 print:text-sm">
                                   الجلسة القادمة: {format(new Date(session.nextDate), 'yyyy/MM/dd')}
                                 </p>
                               )}
@@ -703,11 +717,70 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                   </motion.tr>
                 ))
               ) : (
-                <tr>
-                  <td colSpan={7} className="p-20 text-center text-slate-400 font-bold">
-                    لا توجد جلسات مسجلة لهذا التاريخ
-                  </td>
-                </tr>
+                filteredExpertSessions.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="p-20 text-center text-slate-400 font-bold">
+                      لا توجد جلسات مسجلة لهذا التاريخ
+                    </td>
+                  </tr>
+                )
+              )}
+
+              {/* Expert Sessions Section */}
+              {filteredExpertSessions.length > 0 && (
+                <>
+                  {/* Separator Row - Only visible in print as requested */}
+                  <tr className="hidden print:table-row bg-slate-100 print:bg-slate-200 border-y-2 border-slate-900">
+                    <td colSpan={7} className="p-8 text-center font-black text-slate-900 text-2xl">
+                      رول جلسات الخبراء
+                    </td>
+                  </tr>
+                  
+                  {/* Expert Headers - Requested by user, visible in UI and print for clarity */}
+                  <tr className="bg-slate-50 border-b border-slate-200 print:bg-slate-100 print:border-slate-900">
+                    <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 w-12 text-center print:text-slate-900 print:border-slate-900">#</th>
+                    <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">الخبير</th>
+                    <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">الساعة / المكان</th>
+                    <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">رقم القضية</th>
+                    <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">الموكل</th>
+                    <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900">الخصم</th>
+                    <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest print:text-slate-900">ملاحظات</th>
+                  </tr>
+
+                  {filteredExpertSessions.map((session, index) => (
+                    <tr key={session.id} className="transition-all hover:bg-slate-50 print:hover:bg-transparent">
+                      <td className="p-4 text-sm font-black text-slate-400 text-center border-l border-slate-100 print:text-slate-900 print:border-slate-900">
+                        {index + 1}
+                      </td>
+                      <td className="p-4 border-l border-slate-100 print:border-slate-900">
+                        <span className="text-sm font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-100 print:bg-transparent print:border-none print:text-slate-900">
+                          {session.expertName}
+                        </span>
+                      </td>
+                      <td className="p-4 border-l border-slate-100 print:border-slate-900">
+                        <span className="text-sm font-bold text-slate-700 print:text-slate-900">
+                          {session.officeLocation || '---'}
+                        </span>
+                      </td>
+                      <td className="p-4 border-l border-slate-100 print:border-slate-900">
+                        <span className="text-sm font-black text-slate-900">
+                          {session.caseInfo?.caseNumber || '---'}
+                        </span>
+                      </td>
+                      <td className="p-4 border-l border-slate-100 print:border-slate-900">
+                        <span className="text-sm font-bold text-slate-700 print:text-slate-900">{session.caseInfo?.clientName || '---'}</span>
+                      </td>
+                      <td className="p-4 border-l border-slate-100 print:border-slate-900">
+                        <span className="text-sm font-bold text-slate-700 print:text-slate-900">{session.caseInfo?.opponent || '---'}</span>
+                      </td>
+                      <td className="p-4">
+                        <span className="text-xs font-medium text-slate-500 print:text-slate-900 leading-relaxed">
+                          {session.notes || '---'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </>
               )}
             </tbody>
           </table>

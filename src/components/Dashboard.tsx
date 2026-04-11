@@ -179,14 +179,10 @@ export default function Dashboard({ user }: DashboardProps) {
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'sessions'));
 
     // Anti-Omission
-    const omittedQuery = query(
-      collection(db, 'sessions'),
-      where('date', '<', today),
-      where('decision', '==', ''),
-      limit(10)
-    );
-    const omittedUnsub = onSnapshot(omittedQuery, (snapshot) => {
-      setOmittedSessions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Session)));
+    const omittedUnsub = onSnapshot(collection(db, 'sessions'), (snapshot) => {
+      const allSessions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Session));
+      const omitted = allSessions.filter(s => s.date < today && (!s.decision || s.decision === ''));
+      setOmittedSessions(omitted.slice(0, 10));
     }, (err) => {
       handleFirestoreError(err, OperationType.LIST, 'sessions');
     });

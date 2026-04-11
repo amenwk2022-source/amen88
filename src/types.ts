@@ -32,6 +32,7 @@ export interface Case {
   status: CaseStatus;
   lawyerId?: string;
   tag?: string;
+  clientPosition?: 'plaintiff' | 'defendant' | 'appellant' | 'appellee';
   createdAt: string;
 }
 

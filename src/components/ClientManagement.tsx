@@ -15,6 +15,7 @@ export default function ClientManagement() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [selectedClientForCases, setSelectedClientForCases] = useState<Client | null>(null);
+  const [isAddCaseModalOpen, setIsAddCaseModalOpen] = useState(false);
   const [clientCases, setClientCases] = useState<Case[]>([]);
   const [allSessions, setAllSessions] = useState<Session[]>([]);
   const [formData, setFormData] = useState<Partial<Client>>({
@@ -24,6 +25,46 @@ export default function ClientManagement() {
     address: '',
     poaNumber: ''
   });
+
+  const [caseFormData, setCaseFormData] = useState<Partial<Case>>({
+    caseNumber: '',
+    year: new Date().getFullYear().toString(),
+    court: '',
+    circuit: '',
+    autoNumber: '',
+    opponent: '',
+    caseType: '',
+    status: 'pre-filing',
+    clientPosition: 'plaintiff'
+  });
+
+  const handleAddCase = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClientForCases) return;
+    try {
+      await addDoc(collection(db, 'cases'), {
+        ...caseFormData,
+        clientId: selectedClientForCases.id,
+        clientName: selectedClientForCases.name,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      setIsAddCaseModalOpen(false);
+      setCaseFormData({
+        caseNumber: '',
+        year: new Date().getFullYear().toString(),
+        court: '',
+        circuit: '',
+        autoNumber: '',
+        opponent: '',
+        caseType: '',
+        status: 'pre-filing',
+        clientPosition: 'plaintiff'
+      });
+    } catch (error) {
+      console.error('Error adding case:', error);
+    }
+  };
 
   useEffect(() => {
     const q = query(collection(db, 'clients'), orderBy('name', 'asc'));
@@ -326,6 +367,13 @@ export default function ClientManagement() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setIsAddCaseModalOpen(true)}
+                    className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-indigo-700 transition-all shadow-sm"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>إضافة قضية</span>
+                  </button>
                   <button 
                     onClick={() => window.print()}
                     className="flex items-center gap-2 bg-white text-slate-700 px-4 py-2 rounded-xl font-bold text-sm hover:bg-slate-50 transition-all border border-slate-200 shadow-sm"
@@ -386,7 +434,6 @@ export default function ClientManagement() {
           </div>
         )}
       </AnimatePresence>
-
       {/* Print-only Client Cases Section */}
       {selectedClientForCases && (
         <div className="hidden print:block p-12 bg-white text-right" dir="rtl">
@@ -457,6 +504,151 @@ export default function ClientManagement() {
           </div>
         </div>
       )}
+      {/* Add Case Modal */}
+      <AnimatePresence>
+        {isAddCaseModalOpen && selectedClientForCases && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAddCaseModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden"
+            >
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <h2 className="text-xl font-black text-slate-900">إضافة قضية للموكل: {selectedClientForCases.name}</h2>
+                <button onClick={() => setIsAddCaseModalOpen(false)} className="p-2 hover:bg-white rounded-xl transition-all">
+                  <X className="w-5 h-5 text-slate-400" />
+                </button>
+              </div>
+              <form onSubmit={handleAddCase} className="p-8 space-y-6 max-h-[80vh] overflow-y-auto">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">رقم القضية</label>
+                    <input
+                      type="text"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                      value={caseFormData.caseNumber}
+                      onChange={(e) => setCaseFormData({ ...caseFormData, caseNumber: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">السنة</label>
+                    <input
+                      type="text"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                      value={caseFormData.year}
+                      onChange={(e) => setCaseFormData({ ...caseFormData, year: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">المحكمة</label>
+                    <select
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                      value={caseFormData.court}
+                      onChange={(e) => setCaseFormData({ ...caseFormData, court: e.target.value })}
+                    >
+                      <option value="">اختر المحكمة...</option>
+                      <option>محكمة العاصمة</option>
+                      <option>محكمة حولي</option>
+                      <option>محكمة الفروانية</option>
+                      <option>محكمة الجهراء</option>
+                      <option>محكمة الأحمدي</option>
+                      <option>محكمة مبارك الكبير</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">الدائرة</label>
+                    <input
+                      type="text"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                      value={caseFormData.circuit}
+                      onChange={(e) => setCaseFormData({ ...caseFormData, circuit: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">الرقم الآلي</label>
+                    <input
+                      type="text"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                      value={caseFormData.autoNumber}
+                      onChange={(e) => setCaseFormData({ ...caseFormData, autoNumber: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">الخصم</label>
+                    <input
+                      type="text"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                      value={caseFormData.opponent}
+                      onChange={(e) => setCaseFormData({ ...caseFormData, opponent: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">نوع القضية</label>
+                    <select
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                      value={caseFormData.caseType}
+                      onChange={(e) => setCaseFormData({ ...caseFormData, caseType: e.target.value })}
+                    >
+                      <option value="">اختر النوع...</option>
+                      <option>مدني</option>
+                      <option>تجاري</option>
+                      <option>أسرة</option>
+                      <option>إيجارات</option>
+                      <option>عمالي</option>
+                      <option>جنائي</option>
+                      <option>استئناف</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">صفة الموكل</label>
+                    <select
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                      value={caseFormData.clientPosition}
+                      onChange={(e) => setCaseFormData({ ...caseFormData, clientPosition: e.target.value as any })}
+                    >
+                      {caseFormData.caseType === 'استئناف' ? (
+                        <>
+                          <option value="appellant">مستأنف</option>
+                          <option value="appellee">مستأنف ضده</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="plaintiff">مدعي</option>
+                          <option value="defendant">مدعى عليه</option>
+                        </>
+                      )}
+                    </select>
+                  </div>
+                </div>
+                <div className="pt-4 flex gap-4">
+                  <button
+                    type="submit"
+                    className="flex-1 bg-indigo-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Check className="w-5 h-5" />
+                    إضافة القضية
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddCaseModalOpen(false)}
+                    className="px-8 bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl hover:bg-slate-200 transition-all"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
