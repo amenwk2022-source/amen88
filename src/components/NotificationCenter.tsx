@@ -234,7 +234,19 @@ export async function generateNotifications(userId: string, role: string) {
       .filter(s => role !== 'client' || userCaseIds.includes(s.caseId));
     
     for (const session of sessions) {
-      const sessionDate = parseISO(session.date);
+      if (!session.date) {
+        console.warn('NotificationCenter: Session missing date:', session.id);
+        continue;
+      }
+      let sessionDate: Date;
+      try {
+        sessionDate = parseISO(session.date);
+        if (isNaN(sessionDate.getTime())) throw new Error('Invalid date');
+      } catch (e) {
+        console.error('NotificationCenter: Error parsing session date:', session.date, e);
+        continue;
+      }
+
       if (isWithinInterval(sessionDate, { start: today, end: inTwoDays })) {
         // Check if already notified
         const existing = await getDocs(query(
@@ -266,7 +278,19 @@ export async function generateNotifications(userId: string, role: string) {
       .filter(s => role !== 'client' || userCaseIds.includes(s.caseId));
 
     for (const session of expertSessions) {
-      const sessionDate = parseISO(session.date);
+      if (!session.date) {
+        console.warn('NotificationCenter: Expert session missing date:', session.id);
+        continue;
+      }
+      let sessionDate: Date;
+      try {
+        sessionDate = parseISO(session.date);
+        if (isNaN(sessionDate.getTime())) throw new Error('Invalid date');
+      } catch (e) {
+        console.error('NotificationCenter: Error parsing expert session date:', session.date, e);
+        continue;
+      }
+
       if (isWithinInterval(sessionDate, { start: today, end: inTwoDays })) {
         const existing = await getDocs(query(
           collection(db, 'notifications'), 
@@ -296,7 +320,19 @@ export async function generateNotifications(userId: string, role: string) {
       const tasks = tasksSnap.docs.map(d => ({ id: d.id, ...d.data() } as Task));
 
       for (const task of tasks) {
-        const dueDate = parseISO(task.dueDate);
+        if (!task.dueDate) {
+          console.warn('NotificationCenter: Task missing dueDate:', task.id);
+          continue;
+        }
+        let dueDate: Date;
+        try {
+          dueDate = parseISO(task.dueDate);
+          if (isNaN(dueDate.getTime())) throw new Error('Invalid date');
+        } catch (e) {
+          console.error('NotificationCenter: Error parsing task dueDate:', task.dueDate, e);
+          continue;
+        }
+
         if (isWithinInterval(dueDate, { start: today, end: inTwoDays })) {
           const existing = await getDocs(query(
             collection(db, 'notifications'), 
@@ -330,7 +366,19 @@ export async function generateNotifications(userId: string, role: string) {
     for (const judgment of judgments) {
       if (judgment.isAppealed) continue;
       
-      const deadlineDate = parseISO(judgment.appealDeadline);
+      if (!judgment.appealDeadline) {
+        console.warn('NotificationCenter: Judgment missing appealDeadline:', judgment.id);
+        continue;
+      }
+      let deadlineDate: Date;
+      try {
+        deadlineDate = parseISO(judgment.appealDeadline);
+        if (isNaN(deadlineDate.getTime())) throw new Error('Invalid date');
+      } catch (e) {
+        console.error('NotificationCenter: Error parsing judgment appealDeadline:', judgment.appealDeadline, e);
+        continue;
+      }
+      
       const daysLeft = differenceInDays(deadlineDate, new Date());
 
       // Notify if deadline is within 7 days

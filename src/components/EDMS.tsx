@@ -150,7 +150,17 @@ export default function EDMS({ user }: EDMSProps) {
                 </p>
                 <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-50">
                   <span className="text-[10px] text-slate-400 font-medium">
-                    {format(new Date(docItem.uploadDate), 'yyyy/MM/dd', { locale: ar })}
+                    {(() => {
+                      try {
+                        if (!docItem.uploadDate) return '---';
+                        const d = new Date(docItem.uploadDate);
+                        if (isNaN(d.getTime())) return '---';
+                        return format(d, 'yyyy/MM/dd', { locale: ar });
+                      } catch (e) {
+                        console.error('EDMS: Error parsing uploadDate:', docItem.uploadDate, e);
+                        return '---';
+                      }
+                    })()}
                   </span>
                   <div className="flex items-center gap-1">
                     <button className="p-1.5 hover:bg-slate-100 text-slate-400 rounded-lg transition-all">

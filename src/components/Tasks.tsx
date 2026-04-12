@@ -285,7 +285,17 @@ export default function Tasks({ user }: TasksProps) {
                     <div className="flex items-center gap-2 text-slate-500">
                       <Clock className={cn("w-4 h-4", isOverdue ? "text-red-500 animate-pulse" : "text-slate-400")} />
                       <span className={isOverdue ? "text-red-600" : ""}>
-                        {format(parseISO(task.dueDate), 'dd MMMM yyyy', { locale: arSA })}
+                        {(() => {
+                          try {
+                            if (!task.dueDate) return '---';
+                            const d = parseISO(task.dueDate);
+                            if (isNaN(d.getTime())) return '---';
+                            return format(d, 'dd MMMM yyyy', { locale: arSA });
+                          } catch (e) {
+                            console.error('Tasks: Error parsing dueDate:', task.dueDate, e);
+                            return '---';
+                          }
+                        })()}
                       </span>
                     </div>
                     <span className={cn(

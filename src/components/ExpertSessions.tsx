@@ -179,7 +179,17 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {expertSessions.filter(s => cases.some(c => c.id === s.caseId)).map((session) => {
           const c = getSessionCase(session.caseId);
-          const sessionDate = new Date(session.date);
+          const sessionDate = (() => {
+            try {
+              if (!session.date) throw new Error('Missing date');
+              const d = new Date(session.date);
+              if (isNaN(d.getTime())) throw new Error('Invalid date');
+              return d;
+            } catch (e) {
+              console.error('ExpertSessions: Error parsing session date:', session.date, e);
+              return new Date(); // Fallback to today
+            }
+          })();
           const isPastSession = isPast(sessionDate) && !isToday(sessionDate);
 
           return (

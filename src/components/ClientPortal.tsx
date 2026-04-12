@@ -225,18 +225,28 @@ export default function ClientPortal({ user }: ClientPortalProps) {
                event.type === 'procedure' ? <ClipboardList className="w-4 h-4" /> : <Gavel className="w-4 h-4" />}
             </div>
             <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                  {format(parseISO(event.date), 'dd MMMM yyyy', { locale: arSA })}
-                </span>
-                <span className={cn(
-                  "px-2 py-0.5 rounded-lg text-[10px] font-black uppercase",
-                  event.type === 'session' ? "bg-indigo-600 text-white" :
-                  event.type === 'procedure' ? "bg-emerald-600 text-white" : "bg-amber-600 text-white"
-                )}>
-                  {event.type === 'session' ? 'جلسة' : event.type === 'procedure' ? 'إجراء' : 'حكم'}
-                </span>
-              </div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    {(() => {
+                      try {
+                        if (!event.date) return '---';
+                        const d = parseISO(event.date);
+                        if (isNaN(d.getTime())) return '---';
+                        return format(d, 'dd MMMM yyyy', { locale: arSA });
+                      } catch (e) {
+                        console.error('ClientPortal: Error parsing timeline event date:', event.date, e);
+                        return '---';
+                      }
+                    })()}
+                  </span>
+                  <span className={cn(
+                    "px-2 py-0.5 rounded-lg text-[10px] font-black uppercase",
+                    event.type === 'session' ? "bg-indigo-600 text-white" :
+                    event.type === 'procedure' ? "bg-emerald-600 text-white" : "bg-amber-600 text-white"
+                  )}>
+                    {event.type === 'session' ? 'جلسة' : event.type === 'procedure' ? 'إجراء' : 'حكم'}
+                  </span>
+                </div>
               {event.type === 'session' && (
                 <div>
                   <p className="text-sm font-bold text-slate-900">{(event.data as Session).decision || 'بانتظار القرار'}</p>
@@ -356,9 +366,31 @@ export default function ClientPortal({ user }: ClientPortalProps) {
                     <div key={i} className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
                       <div className="flex flex-col items-center justify-center bg-white p-2 rounded-lg border border-slate-200 min-w-[64px]">
                         <span className="text-[10px] font-black text-indigo-600 uppercase">
-                          {format(parseISO(session.date), 'MMMM', { locale: arSA })}
+                          {(() => {
+                            try {
+                              if (!session.date) return '---';
+                              const d = parseISO(session.date);
+                              if (isNaN(d.getTime())) return '---';
+                              return format(d, 'MMMM', { locale: arSA });
+                            } catch (e) {
+                              console.error('ClientPortal: Error parsing session date (month):', session.date, e);
+                              return '---';
+                            }
+                          })()}
                         </span>
-                        <span className="text-xl font-black text-slate-900">{format(parseISO(session.date), 'dd')}</span>
+                        <span className="text-xl font-black text-slate-900">
+                          {(() => {
+                            try {
+                              if (!session.date) return '--';
+                              const d = parseISO(session.date);
+                              if (isNaN(d.getTime())) return '--';
+                              return format(d, 'dd');
+                            } catch (e) {
+                              console.error('ClientPortal: Error parsing session date (day):', session.date, e);
+                              return '--';
+                            }
+                          })()}
+                        </span>
                       </div>
                       <div className="flex-1">
                         <h4 className="text-sm font-bold text-slate-900">جلسة مرافعة</h4>
@@ -382,9 +414,31 @@ export default function ClientPortal({ user }: ClientPortalProps) {
                     <div key={i} className="flex items-center gap-4 p-4 bg-amber-50/50 rounded-xl border border-amber-100">
                       <div className="flex flex-col items-center justify-center bg-white p-2 rounded-lg border border-amber-200 min-w-[64px]">
                         <span className="text-[10px] font-black text-amber-600 uppercase">
-                          {format(parseISO(session.date), 'MMMM', { locale: arSA })}
+                          {(() => {
+                            try {
+                              if (!session.date) return '---';
+                              const d = parseISO(session.date);
+                              if (isNaN(d.getTime())) return '---';
+                              return format(d, 'MMMM', { locale: arSA });
+                            } catch (e) {
+                              console.error('ClientPortal: Error parsing expert session date (month):', session.date, e);
+                              return '---';
+                            }
+                          })()}
                         </span>
-                        <span className="text-xl font-black text-slate-900">{format(parseISO(session.date), 'dd')}</span>
+                        <span className="text-xl font-black text-slate-900">
+                          {(() => {
+                            try {
+                              if (!session.date) return '--';
+                              const d = parseISO(session.date);
+                              if (isNaN(d.getTime())) return '--';
+                              return format(d, 'dd');
+                            } catch (e) {
+                              console.error('ClientPortal: Error parsing expert session date (day):', session.date, e);
+                              return '--';
+                            }
+                          })()}
+                        </span>
                       </div>
                       <div className="flex-1">
                         <h4 className="text-sm font-bold text-slate-900">{session.expertName}</h4>
@@ -607,7 +661,19 @@ export default function ClientPortal({ user }: ClientPortalProps) {
                       </div>
                       <div>
                         <h4 className="text-sm font-black text-slate-900">{req.subject}</h4>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase">{format(parseISO(req.date), 'dd MMMM yyyy', { locale: arSA })}</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase">
+                          {(() => {
+                            try {
+                              if (!req.date) return '---';
+                              const d = parseISO(req.date);
+                              if (isNaN(d.getTime())) return '---';
+                              return format(d, 'dd MMMM yyyy', { locale: arSA });
+                            } catch (e) {
+                              console.error('ClientPortal: Error parsing consultation date:', req.date, e);
+                              return '---';
+                            }
+                          })()}
+                        </p>
                       </div>
                     </div>
                     <span className={cn(

@@ -70,11 +70,21 @@ export default function CalendarView({ user }: CalendarViewProps) {
           const data = doc.data() as Session;
           const caseInfo = cases.find(c => c.id === data.caseId);
           if (user.role === 'client' && !caseInfo) return null;
+          let eventDate: Date;
+          try {
+            if (!data.date) throw new Error('Missing date');
+            eventDate = parseISO(data.date);
+            if (isNaN(eventDate.getTime())) throw new Error('Invalid date');
+          } catch (e) {
+            console.error('CalendarView: Error parsing session date:', { id: doc.id, date: data.date }, e);
+            return null;
+          }
+
           const event: CalendarEvent = {
             id: doc.id,
             type: 'session',
             title: `جلسة: ${caseInfo?.caseNumber || '---'}`,
-            date: parseISO(data.date),
+            date: eventDate,
             caseId: data.caseId,
             caseNumber: caseInfo?.caseNumber
           };
@@ -90,11 +100,21 @@ export default function CalendarView({ user }: CalendarViewProps) {
           const data = doc.data() as ExpertSession;
           const caseInfo = cases.find(c => c.id === data.caseId);
           if (user.role === 'client' && !caseInfo) return null;
+          let eventDate: Date;
+          try {
+            if (!data.date) throw new Error('Missing date');
+            eventDate = parseISO(data.date);
+            if (isNaN(eventDate.getTime())) throw new Error('Invalid date');
+          } catch (e) {
+            console.error('CalendarView: Error parsing expert session date:', { id: doc.id, date: data.date }, e);
+            return null;
+          }
+
           const event: CalendarEvent = {
             id: doc.id,
             type: 'expert',
             title: `خبير: ${data.expertName}`,
-            date: parseISO(data.date),
+            date: eventDate,
             status: data.status,
             caseId: data.caseId,
             caseNumber: caseInfo?.caseNumber
@@ -110,16 +130,27 @@ export default function CalendarView({ user }: CalendarViewProps) {
         updateEvents('task', []);
         return;
       }
-      const taskEvents: CalendarEvent[] = snapshot.docs.map(doc => {
+      const taskEvents = snapshot.docs.map((doc): CalendarEvent | null => {
         const data = doc.data() as Task;
-        return {
+        let eventDate: Date;
+        try {
+          if (!data.dueDate) throw new Error('Missing dueDate');
+          eventDate = parseISO(data.dueDate);
+          if (isNaN(eventDate.getTime())) throw new Error('Invalid date');
+        } catch (e) {
+          console.error('CalendarView: Error parsing task dueDate:', { id: doc.id, date: data.dueDate }, e);
+          return null;
+        }
+
+        const event: CalendarEvent = {
           id: doc.id,
           type: 'task',
           title: `مهمة: ${data.title}`,
-          date: parseISO(data.dueDate),
+          date: eventDate,
           status: data.status
         };
-      });
+        return event;
+      }).filter((e): e is CalendarEvent => e !== null);
       updateEvents('task', taskEvents);
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'tasks'));
 
@@ -130,11 +161,21 @@ export default function CalendarView({ user }: CalendarViewProps) {
           const data = doc.data() as Judgment;
           const caseInfo = cases.find(c => c.id === data.caseId);
           if (user.role === 'client' && !caseInfo) return null;
+          let eventDate: Date;
+          try {
+            if (!data.appealDeadline) throw new Error('Missing appealDeadline');
+            eventDate = parseISO(data.appealDeadline);
+            if (isNaN(eventDate.getTime())) throw new Error('Invalid date');
+          } catch (e) {
+            console.error('CalendarView: Error parsing judgment appealDeadline:', { id: doc.id, date: data.appealDeadline }, e);
+            return null;
+          }
+
           const event: CalendarEvent = {
             id: doc.id,
             type: 'deadline',
             title: `موعد استئناف: ${caseInfo?.caseNumber || '---'}`,
-            date: parseISO(data.appealDeadline),
+            date: eventDate,
             caseId: data.caseId,
             caseNumber: caseInfo?.caseNumber
           };

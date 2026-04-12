@@ -179,12 +179,21 @@ export default function Dashboard({ user }: DashboardProps) {
       limit(5)
     );
     const sessionsUnsub = onSnapshot(sessionsQuery, (snapshot) => {
-      setUpcomingSessions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Session)));
+      const sessions = snapshot.docs.map(doc => {
+        const data = doc.data();
+        if (!data.date) console.warn('Dashboard: Session missing date:', doc.id);
+        return { id: doc.id, ...data } as Session;
+      });
+      setUpcomingSessions(sessions);
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'sessions'));
 
     // Anti-Omission
     const omittedUnsub = onSnapshot(collection(db, 'sessions'), (snapshot) => {
-      const sessions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Session));
+      const sessions = snapshot.docs.map(doc => {
+        const data = doc.data();
+        if (!data.date) console.warn('Dashboard: Session missing date for anti-omission:', doc.id);
+        return { id: doc.id, ...data } as Session;
+      });
       setAllSessions(sessions);
     }, (err) => {
       handleFirestoreError(err, OperationType.LIST, 'sessions');
@@ -223,7 +232,19 @@ export default function Dashboard({ user }: DashboardProps) {
     const today = new Date().toISOString().split('T')[0];
     const omitted = allSessions.filter(s => {
       const caseItem = cases.find(c => c.id === s.caseId);
-      return s.date < today && (!s.decision || s.decision === '') && caseItem?.status === 'active';
+      const sDateStr = s.date?.split('T')[0];
+      if (!sDateStr) return false;
+      
+      const isOmitted = sDateStr < today && (!s.decision || s.decision === '') && caseItem?.status === 'active';
+      if (isOmitted) {
+        console.log('Dashboard: Omitted session found:', {
+          sessionId: s.id,
+          date: s.date,
+          caseId: s.caseId,
+          caseStatus: caseItem?.status
+        });
+      }
+      return isOmitted;
     });
     setOmittedSessions(omitted.slice(0, 10));
   }, [cases, allSessions]);
@@ -424,20 +445,34 @@ export default function Dashboard({ user }: DashboardProps) {
             </div>
           </div>
           <div className="space-y-4">
-            {upcomingSessions.length > 0 ? upcomingSessions.map((session, i) => (
-              <div key={i} className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-indigo-200 transition-all group">
-                <div className="flex flex-col items-center justify-center bg-white p-2 rounded-lg border border-slate-200 min-w-[64px] shadow-sm">
-                  <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter">
-                    {format(parseISO(session.date), 'MMMM', { locale: arSA })}
-                  </span>
-                  <span className="text-xl font-black text-slate-900 leading-none">{format(parseISO(session.date), 'dd')}</span>
+            {upcomingSessions.length > 0 ? upcomingSessions.map((session, i) => {
+              let sessionDate: Date | null = null;
+              try {
+                if (session.date) {
+                  sessionDate = parseISO(session.date);
+                  if (isNaN(sessionDate.getTime())) throw new Error('Invalid date');
+                }
+              } catch (e) {
+                console.error('Dashboard: Error parsing session date:', session.date, e);
+              }
+
+              return (
+                <div key={i} className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-indigo-200 transition-all group">
+                  <div className="flex flex-col items-center justify-center bg-white p-2 rounded-lg border border-slate-200 min-w-[64px] shadow-sm">
+                    <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter">
+                      {sessionDate ? format(sessionDate, 'MMMM', { locale: arSA }) : '---'}
+                    </span>
+                    <span className="text-xl font-black text-slate-900 leading-none">
+                      {sessionDate ? format(sessionDate, 'dd') : '--'}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-sm font-bold text-slate-900 truncate">جلسة مرافعة</h4>
+                    <p className="text-xs text-slate-500 font-medium truncate">قضية رقم {session.caseId.slice(0, 8)}</p>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-bold text-slate-900 truncate">جلسة مرافعة</h4>
-                  <p className="text-xs text-slate-500 font-medium truncate">قضية رقم {session.caseId.slice(0, 8)}</p>
-                </div>
-              </div>
-            )) : (
+              );
+            }) : (
               <div className="text-center py-8 text-slate-400 font-medium">لا توجد جلسات قادمة</div>
             )}
           </div>
@@ -462,20 +497,34 @@ export default function Dashboard({ user }: DashboardProps) {
             </div>
           </div>
           <div className="space-y-4">
-            {upcomingExpertSessions.length > 0 ? upcomingExpertSessions.map((session, i) => (
-              <div key={i} className="flex items-center gap-4 p-4 bg-amber-50/50 rounded-xl border border-amber-100 hover:border-amber-200 transition-all group">
-                <div className="flex flex-col items-center justify-center bg-white p-2 rounded-lg border border-amber-200 min-w-[64px] shadow-sm">
-                  <span className="text-[10px] font-black text-amber-600 uppercase tracking-tighter">
-                    {format(parseISO(session.date), 'MMMM', { locale: arSA })}
-                  </span>
-                  <span className="text-xl font-black text-slate-900 leading-none">{format(parseISO(session.date), 'dd')}</span>
+            {upcomingExpertSessions.length > 0 ? upcomingExpertSessions.map((session, i) => {
+              let sessionDate: Date | null = null;
+              try {
+                if (session.date) {
+                  sessionDate = parseISO(session.date);
+                  if (isNaN(sessionDate.getTime())) throw new Error('Invalid date');
+                }
+              } catch (e) {
+                console.error('Dashboard: Error parsing expert session date:', session.date, e);
+              }
+
+              return (
+                <div key={i} className="flex items-center gap-4 p-4 bg-amber-50/50 rounded-xl border border-amber-100 hover:border-amber-200 transition-all group">
+                  <div className="flex flex-col items-center justify-center bg-white p-2 rounded-lg border border-amber-200 min-w-[64px] shadow-sm">
+                    <span className="text-[10px] font-black text-amber-600 uppercase tracking-tighter">
+                      {sessionDate ? format(sessionDate, 'MMMM', { locale: arSA }) : '---'}
+                    </span>
+                    <span className="text-xl font-black text-slate-900 leading-none">
+                      {sessionDate ? format(sessionDate, 'dd') : '--'}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-sm font-bold text-slate-900 truncate">{session.expertName}</h4>
+                    <p className="text-xs text-slate-500 font-medium truncate">{session.officeLocation}</p>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-bold text-slate-900 truncate">{session.expertName}</h4>
-                  <p className="text-xs text-slate-500 font-medium truncate">{session.officeLocation}</p>
-                </div>
-              </div>
-            )) : (
+              );
+            }) : (
               <div className="text-center py-8 text-slate-400 font-medium">لا توجد جلسات خبراء</div>
             )}
           </div>
@@ -492,7 +541,17 @@ export default function Dashboard({ user }: DashboardProps) {
           </div>
           <div className="space-y-4">
             {activeDeadlines.length > 0 ? activeDeadlines.map((judgment, i) => {
-              const daysLeft = differenceInDays(parseISO(judgment.appealDeadline), new Date());
+              let deadlineDate: Date | null = null;
+              try {
+                if (judgment.appealDeadline) {
+                  deadlineDate = parseISO(judgment.appealDeadline);
+                  if (isNaN(deadlineDate.getTime())) throw new Error('Invalid date');
+                }
+              } catch (e) {
+                console.error('Dashboard: Error parsing judgment appealDeadline:', judgment.appealDeadline, e);
+              }
+
+              const daysLeft = deadlineDate ? differenceInDays(deadlineDate, new Date()) : 0;
               return (
                 <div key={i} className={cn(
                   "p-4 rounded-xl border transition-all flex items-center justify-between",

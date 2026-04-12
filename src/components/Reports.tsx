@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { collection, onSnapshot, query, orderBy, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { FileText, Download, Printer, Filter, Calendar, Briefcase, Users, TrendingUp, CheckCircle2, AlertCircle, Search, X } from 'lucide-react';
+import { FileText, Download, Printer, Filter, Calendar, Briefcase, Users, TrendingUp, CheckCircle2, AlertCircle, Search, X, Scale } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Case, Client, Session, Finance, UserProfile } from '../types';
 import { cn } from '../lib/utils';
@@ -126,7 +126,20 @@ export default function Reports({ user }: ReportsProps) {
 
   const filterData = (data: any[]) => {
     return data.filter(item => {
-      const itemDate = item.createdAt ? parseISO(item.createdAt) : null;
+      let itemDate: Date | null = null;
+      if (item.createdAt) {
+        try {
+          itemDate = parseISO(item.createdAt);
+          if (isNaN(itemDate.getTime())) {
+            console.warn('Reports: Invalid date string encountered:', item.createdAt);
+            itemDate = null;
+          }
+        } catch (e) {
+          console.error('Reports: Error parsing date:', item.createdAt, e);
+          itemDate = null;
+        }
+      }
+
       const matchesDate = (!startDate || !itemDate || itemDate >= startOfDay(parseISO(startDate))) &&
                           (!endDate || !itemDate || itemDate <= endOfDay(parseISO(endDate)));
       

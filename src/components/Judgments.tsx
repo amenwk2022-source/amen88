@@ -153,7 +153,15 @@ export default function Judgments({ user }: JudgmentsProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         {filteredJudgments.map((judgment) => {
           const caseInfo = cases.find(c => c.id === judgment.caseId);
-          const deadlineDate = judgment.appealDeadline ? parseISO(judgment.appealDeadline) : null;
+          let deadlineDate: Date | null = null;
+          try {
+            if (judgment.appealDeadline) {
+              deadlineDate = parseISO(judgment.appealDeadline);
+              if (isNaN(deadlineDate.getTime())) throw new Error('Invalid appealDeadline');
+            }
+          } catch (e) {
+            console.error('Judgments: Error parsing appealDeadline:', judgment.appealDeadline, e);
+          }
           const isDeadlinePassed = deadlineDate ? isPast(deadlineDate) : false;
 
           return (
@@ -209,7 +217,19 @@ export default function Judgments({ user }: JudgmentsProps) {
               <div className="space-y-3">
                 <div className="flex items-center justify-between text-xs font-bold">
                   <span className="text-slate-400">تاريخ الحكم:</span>
-                  <span className="text-slate-700">{format(parseISO(judgment.date), 'yyyy/MM/dd')}</span>
+                  <span className="text-slate-700">
+                    {(() => {
+                      try {
+                        if (!judgment.date) return '---';
+                        const d = parseISO(judgment.date);
+                        if (isNaN(d.getTime())) return '---';
+                        return format(d, 'yyyy/MM/dd');
+                      } catch (e) {
+                        console.error('Judgments: Error parsing judgment date:', judgment.date, e);
+                        return '---';
+                      }
+                    })()}
+                  </span>
                 </div>
                 
                 {judgment.appealDeadline && (

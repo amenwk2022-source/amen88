@@ -82,7 +82,23 @@ export default function LegalDeadlines({ user }: LegalDeadlinesProps) {
           <div className="grid gap-4">
             {judgments.filter(j => !j.isAppealed && cases.some(c => c.id === j.caseId)).map((judgment) => {
               const c = getJudgmentCase(judgment.caseId);
-              const daysLeft = differenceInDays(parseISO(judgment.appealDeadline), new Date());
+              let deadlineDate: Date | null = null;
+              let judgmentDate: Date | null = null;
+              
+              try {
+                if (judgment.appealDeadline) {
+                  deadlineDate = parseISO(judgment.appealDeadline);
+                  if (isNaN(deadlineDate.getTime())) throw new Error('Invalid deadline');
+                }
+                if (judgment.date) {
+                  judgmentDate = parseISO(judgment.date);
+                  if (isNaN(judgmentDate.getTime())) throw new Error('Invalid judgment date');
+                }
+              } catch (e) {
+                console.error('LegalDeadlines: Error parsing judgment dates:', { id: judgment.id, deadline: judgment.appealDeadline, date: judgment.date }, e);
+              }
+
+              const daysLeft = deadlineDate ? differenceInDays(deadlineDate, new Date()) : 0;
               const isCritical = daysLeft <= 5;
 
               return (
@@ -109,11 +125,11 @@ export default function LegalDeadlines({ user }: LegalDeadlinesProps) {
                       <div className="flex items-center gap-4 mt-4">
                         <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
                           <Calendar className="w-4 h-4 text-slate-400" />
-                          تاريخ الحكم: {format(parseISO(judgment.date), 'yyyy/MM/dd')}
+                          تاريخ الحكم: {judgmentDate ? format(judgmentDate, 'yyyy/MM/dd') : '---'}
                         </div>
                         <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
                           <AlertTriangle className={cn("w-4 h-4", isCritical ? "text-red-500" : "text-amber-500")} />
-                          آخر موعد: {format(parseISO(judgment.appealDeadline), 'yyyy/MM/dd')}
+                          آخر موعد: {deadlineDate ? format(deadlineDate, 'yyyy/MM/dd') : '---'}
                         </div>
                       </div>
                     </div>
@@ -175,7 +191,17 @@ export default function LegalDeadlines({ user }: LegalDeadlinesProps) {
                     <h4 className="text-sm font-black text-slate-900">{notif.title}</h4>
                     <p className="text-xs font-bold text-slate-600 leading-relaxed">{notif.message}</p>
                     <p className="text-[10px] text-slate-400 font-bold mt-2">
-                      {format(parseISO(notif.date), 'yyyy/MM/dd HH:mm')}
+                      {(() => {
+                        try {
+                          if (!notif.date) return '---';
+                          const d = parseISO(notif.date);
+                          if (isNaN(d.getTime())) return '---';
+                          return format(d, 'yyyy/MM/dd HH:mm');
+                        } catch (e) {
+                          console.error('LegalDeadlines: Error parsing notification date:', notif.date, e);
+                          return '---';
+                        }
+                      })()}
                     </p>
                   </div>
                 </div>

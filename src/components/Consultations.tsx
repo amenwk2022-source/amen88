@@ -131,7 +131,17 @@ export default function Consultations({ user }: ConsultationsProps) {
                 {req.status === 'pending' ? 'بانتظار الرد' : req.status === 'replied' ? 'تم الرد' : 'مغلق'}
               </span>
               <span className="text-[10px] text-slate-400 font-bold uppercase">
-                {format(parseISO(req.date), 'dd MMMM yyyy', { locale: arSA })}
+                {(() => {
+                  try {
+                    if (!req.date) return '---';
+                    const d = parseISO(req.date);
+                    if (isNaN(d.getTime())) return '---';
+                    return format(d, 'dd MMMM yyyy', { locale: arSA });
+                  } catch (e) {
+                    console.error('Consultations: Error parsing date:', req.date, e);
+                    return '---';
+                  }
+                })()}
               </span>
             </div>
             

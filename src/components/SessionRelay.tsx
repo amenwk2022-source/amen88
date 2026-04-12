@@ -331,6 +331,10 @@ export default function SessionRelay({ user }: SessionRelayProps) {
     .filter(s => s.caseInfo); // Only keep sessions with case info (important for client role)
 
   const filteredSessions = allSessionsWithCase.filter(s => {
+    if (!s.date) {
+      console.warn('SessionRelay: Missing date for session:', s.id);
+      return false;
+    }
     const sDate = s.date.split('T')[0];
     const courtMatch = selectedCourt === 'ALL' || s.caseInfo?.court === selectedCourt;
     
@@ -354,15 +358,28 @@ export default function SessionRelay({ user }: SessionRelayProps) {
       caseInfo: cases.find(c => c.id === s.caseId)
     }))
     .filter(s => {
+      if (!s.date) {
+        console.warn('SessionRelay: Missing date for expert session:', s.id);
+        return false;
+      }
       const sDate = s.date.split('T')[0];
       const courtMatch = selectedCourt === 'ALL' || s.caseInfo?.court === selectedCourt;
       return sDate === displayDateStr && s.caseInfo && courtMatch;
     });
 
   const stats = {
-    today: sessions.filter(s => s.date.split('T')[0] === todayStr).length,
-    upcoming: sessions.filter(s => s.date.split('T')[0] > todayStr).length,
-    omitted: allSessionsWithCase.filter(s => s.date.split('T')[0] < realTodayStr && !s.decision && s.caseInfo?.status === 'active').length,
+    today: sessions.filter(s => {
+      if (!s.date) return false;
+      return s.date.split('T')[0] === todayStr;
+    }).length,
+    upcoming: sessions.filter(s => {
+      if (!s.date) return false;
+      return s.date.split('T')[0] > todayStr;
+    }).length,
+    omitted: allSessionsWithCase.filter(s => {
+      if (!s.date) return false;
+      return s.date.split('T')[0] < realTodayStr && !s.decision && s.caseInfo?.status === 'active';
+    }).length,
   };
 
   const formatDate = (date: Date) => {
@@ -672,7 +689,16 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                               <p className="text-sm font-bold text-emerald-900 print:text-slate-900 leading-relaxed print:text-base print:font-bold">{session.decision}</p>
                               {session.nextDate && (
                                 <p className="text-[10px] text-emerald-600 font-black mt-1 print:text-slate-600 print:text-sm">
-                                  الجلسة القادمة: {format(new Date(session.nextDate), 'yyyy/MM/dd')}
+                                  الجلسة القادمة: {(() => {
+                                    try {
+                                      const d = new Date(session.nextDate);
+                                      if (isNaN(d.getTime())) throw new Error('Invalid date');
+                                      return format(d, 'yyyy/MM/dd');
+                                    } catch (e) {
+                                      console.error('SessionRelay: Error formatting nextDate:', session.nextDate, e);
+                                      return '---';
+                                    }
+                                  })()}
                                 </p>
                               )}
                             </div>
