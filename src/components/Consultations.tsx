@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { format, parseISO } from 'date-fns';
 import { arSA } from 'date-fns/locale';
 import { cn } from '../lib/utils';
+import { createNotification } from './NotificationCenter';
 
 interface ConsultationsProps {
   user: UserProfile;
@@ -44,13 +45,12 @@ export default function Consultations({ user }: ConsultationsProps) {
       });
       
       // Notify client
-      await addDoc(collection(db, 'notifications'), {
-        userId: selectedRequest.clientId,
+      await createNotification(selectedRequest.clientId, {
         title: 'تم الرد على استشارتك',
         message: `قام المكتب بالرد على استشارتك بخصوص: ${selectedRequest.subject}`,
-        type: 'system',
-        date: new Date().toISOString(),
-        isRead: false
+        type: 'consultation',
+        relatedId: selectedRequest.id,
+        link: '/client-portal'
       });
 
       setReply('');

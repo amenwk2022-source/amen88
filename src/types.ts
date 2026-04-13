@@ -96,6 +96,7 @@ export interface ExpertSession {
   notes?: string;
   nextDate?: string;
   decision?: string;
+  isRelayed?: boolean;
   caseInfo?: Partial<Case>;
 }
 
@@ -104,11 +105,25 @@ export interface AppNotification {
   userId: string;
   title: string;
   message: string;
-  type: 'deadline' | 'session' | 'system' | 'expert' | 'task';
+  type: 'deadline' | 'session' | 'system' | 'expert' | 'task' | 'note' | 'consultation';
   date: string;
   isRead: boolean;
   link?: string;
   relatedId?: string;
+}
+
+export interface UserNotificationSettings {
+  id: string; // userId
+  emailNotifications: boolean;
+  browserNotifications: boolean;
+  types: {
+    deadline: boolean;
+    session: boolean;
+    expert: boolean;
+    task: boolean;
+    note: boolean;
+    consultation: boolean;
+  };
 }
 
 export interface Task {

@@ -22,6 +22,8 @@ import { Task, UserProfile, Case } from '../types';
 import { cn } from '../lib/utils';
 import { format, parseISO } from 'date-fns';
 import { arSA } from 'date-fns/locale';
+import ConfirmModal from './ConfirmModal';
+import { createNotification } from './NotificationCenter';
 
 interface TasksProps {
   user: UserProfile;
@@ -38,6 +40,8 @@ export default function Tasks({ user }: TasksProps) {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [caseSearchQuery, setCaseSearchQuery] = useState('');
   const [showCaseDropdown, setShowCaseDropdown] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
 
   const [formData, setFormData] = useState<Partial<Task>>({
     title: '',
@@ -85,11 +89,33 @@ export default function Tasks({ user }: TasksProps) {
     try {
       if (editingTask) {
         await updateDoc(doc(db, 'tasks', editingTask.id), formData);
+        
+        // Notify if assigned user changed
+        if (formData.assignedTo && formData.assignedTo !== editingTask.assignedTo) {
+          await createNotification(formData.assignedTo, {
+            title: 'مهمة جديدة مسندة إليك',
+            message: `تم إسناد المهمة "${formData.title}" إليك`,
+            type: 'task',
+            relatedId: editingTask.id,
+            link: '/tasks'
+          });
+        }
       } else {
-        await addDoc(collection(db, 'tasks'), {
+        const docRef = await addDoc(collection(db, 'tasks'), {
           ...formData,
           createdAt: new Date().toISOString()
         });
+
+        // Notify assigned user
+        if (formData.assignedTo) {
+          await createNotification(formData.assignedTo, {
+            title: 'مهمة جديدة مسندة إليك',
+            message: `تم إسناد المهمة "${formData.title}" إليك`,
+            type: 'task',
+            relatedId: docRef.id,
+            link: '/tasks'
+          });
+        }
       }
       setIsModalOpen(false);
       setEditingTask(null);
@@ -108,10 +134,12 @@ export default function Tasks({ user }: TasksProps) {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('هل أنت متأكد من حذف هذه المهمة؟')) return;
+  const handleDelete = async () => {
+    if (!taskToDelete) return;
     try {
-      await deleteDoc(doc(db, 'tasks', id));
+      await deleteDoc(doc(db, 'tasks', taskToDelete));
+      setIsDeleteModalOpen(false);
+      setTaskToDelete(null);
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, 'tasks');
     }
@@ -260,7 +288,10 @@ export default function Tasks({ user }: TasksProps) {
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button 
-                        onClick={() => handleDelete(task.id)}
+                        onClick={() => {
+                          setTaskToDelete(task.id);
+                          setIsDeleteModalOpen(true);
+                        }}
                         className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -496,6 +527,20 @@ export default function Tasks({ user }: TasksProps) {
           </div>
         )}
       </AnimatePresence>
+
+      <ConfirmModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setTaskToDelete(null);
+        }}
+        onConfirm={handleDelete}
+        title="حذف المهمة"
+        message="هل أنت متأكد من حذف هذه المهمة؟ لا يمكن التراجع عن هذا الإجراء."
+        confirmLabel="حذف"
+        cancelLabel="إلغاء"
+        variant="danger"
+      />
     </div>
   );
 }

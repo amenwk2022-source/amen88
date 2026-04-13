@@ -29,6 +29,7 @@ import { cn } from '../lib/utils';
 import { UserProfile, AppNotification, Case } from '../types';
 
 import NotificationCenter, { generateNotifications } from './NotificationCenter';
+import toast from 'react-hot-toast';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -73,12 +74,45 @@ export default function Layout({ children, user }: LayoutProps) {
   useEffect(() => {
     if (!user) return;
 
-    // Generate notifications on login
+    // Generate notifications on login and then every hour
     generateNotifications(user.uid, user.role);
+    const interval = setInterval(() => generateNotifications(user.uid, user.role), 3600000);
 
     const unsubNotifs = onSnapshot(
       query(collection(db, 'notifications'), where('userId', '==', user.uid), where('isRead', '==', false), limit(10)),
       (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === 'added') {
+            const notif = change.doc.data() as AppNotification;
+            const notifDate = new Date(notif.date);
+            const now = new Date();
+            if (now.getTime() - notifDate.getTime() < 60000) {
+              toast((t) => (
+                <div className="flex flex-col gap-1 rtl" dir="rtl">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="font-black text-slate-900 text-sm">{notif.title}</span>
+                    <button onClick={() => toast.dismiss(t.id)} className="text-slate-400 hover:text-slate-600">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-500 font-medium">{notif.message}</p>
+                </div>
+              ), {
+                duration: 6000,
+                position: 'bottom-left',
+                style: {
+                  borderRadius: '16px',
+                  background: '#fff',
+                  color: '#334155',
+                  boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+                  border: '1px solid #f1f5f9',
+                  padding: '12px 16px',
+                  minWidth: '300px'
+                },
+              });
+            }
+          }
+        });
         setNotifications(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AppNotification)));
       },
       (err) => handleFirestoreError(err, OperationType.LIST, 'notifications')
@@ -106,6 +140,7 @@ export default function Layout({ children, user }: LayoutProps) {
       unsubCases();
       unsubClients();
       unsubTasks();
+      clearInterval(interval);
     };
   }, [user]);
 

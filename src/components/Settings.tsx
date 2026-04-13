@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UserProfile, SystemSettings, UserRole } from '../types';
+import { UserProfile, SystemSettings, UserRole, UserNotificationSettings } from '../types';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { 
   updateDoc, 
@@ -29,17 +29,21 @@ import {
   X,
   AlertTriangle,
   Gavel,
-  DollarSign
+  DollarSign,
+  Bell,
+  Monitor,
+  AtSign
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
+import ConfirmModal from './ConfirmModal';
 
 interface SettingsProps {
   user: UserProfile;
 }
 
 export default function Settings({ user }: SettingsProps) {
-  const [activeTab, setActiveTab] = useState<'profile' | 'office' | 'users'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'office' | 'users' | 'notifications'>('profile');
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -47,6 +51,21 @@ export default function Settings({ user }: SettingsProps) {
   const [profileData, setProfileData] = useState({
     name: user.name,
     email: user.email,
+  });
+
+  // Notification Settings State
+  const [notifSettings, setNotifSettings] = useState<UserNotificationSettings>({
+    id: user.uid,
+    emailNotifications: true,
+    browserNotifications: true,
+    types: {
+      deadline: true,
+      session: true,
+      expert: true,
+      task: true,
+      note: true,
+      consultation: true
+    }
   });
 
   // System Settings State
@@ -77,6 +96,9 @@ export default function Settings({ user }: SettingsProps) {
   // Users Management State
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [isUsersLoading, setIsUsersLoading] = useState(false);
+
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<string | null>(null);
 
   useEffect(() => {
     // Load System Settings
@@ -122,6 +144,22 @@ export default function Settings({ user }: SettingsProps) {
 
     loadSettings();
 
+    // Load Notification Settings
+    const loadNotifSettings = async () => {
+      try {
+        const snap = await getDoc(doc(db, 'notificationSettings', user.uid));
+        if (snap.exists()) {
+          setNotifSettings(snap.data() as UserNotificationSettings);
+        } else {
+          // Initialize with defaults
+          await setDoc(doc(db, 'notificationSettings', user.uid), notifSettings);
+        }
+      } catch (err) {
+        console.error('Error loading notification settings:', err);
+      }
+    };
+    loadNotifSettings();
+
     // Load Users if Admin
     if (user.role === 'admin') {
       setIsUsersLoading(true);
@@ -163,6 +201,20 @@ export default function Settings({ user }: SettingsProps) {
     }
   };
 
+  const handleNotifSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSaving(true);
+    try {
+      await setDoc(doc(db, 'notificationSettings', user.uid), notifSettings);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'notificationSettings');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleUpdateUserRole = async (uid: string, newRole: UserRole) => {
     try {
       await updateDoc(doc(db, 'users', uid), { role: newRole });
@@ -171,17 +223,20 @@ export default function Settings({ user }: SettingsProps) {
     }
   };
 
-  const handleDeleteUser = async (uid: string) => {
-    if (uid === user.uid) {
-      alert('لا يمكنك حذف حسابك الخاص!');
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return;
+    if (userToDelete === user.uid) {
+      setIsDeleteModalOpen(false);
+      setUserToDelete(null);
+      // We can't use alert, so we'll just return or show a toast if we had one
       return;
     }
-    if (window.confirm('هل أنت متأكد من حذف هذا المستخدم؟ لا يمكن التراجع عن هذا الإجراء.')) {
-      try {
-        await deleteDoc(doc(db, 'users', uid));
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, 'users');
-      }
+    try {
+      await deleteDoc(doc(db, 'users', userToDelete));
+      setIsDeleteModalOpen(false);
+      setUserToDelete(null);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'users');
     }
   };
 
@@ -262,6 +317,16 @@ export default function Settings({ user }: SettingsProps) {
               المستخدمين
             </button>
           )}
+          <button
+            onClick={() => setActiveTab('notifications')}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all",
+              activeTab === 'notifications' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-100" : "text-slate-500 hover:bg-slate-50"
+            )}
+          >
+            <Bell className="w-4 h-4" />
+            التنبيهات
+          </button>
         </div>
       </div>
 
@@ -335,6 +400,131 @@ export default function Settings({ user }: SettingsProps) {
                 >
                   {isSaving ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Save className="w-5 h-5" />}
                   حفظ الملف الشخصي
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        )}
+
+        {activeTab === 'notifications' && (
+          <motion.div
+            key="notifications"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="space-y-8"
+          >
+            <form onSubmit={handleNotifSubmit} className="space-y-8">
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
+                  <Bell className="w-5 h-5 text-indigo-600" />
+                  <h2 className="text-lg font-bold text-slate-900">تفضيلات التنبيهات</h2>
+                </div>
+                <div className="p-8 space-y-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="space-y-4">
+                      <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                        <Monitor className="w-4 h-4 text-indigo-600" />
+                        قنوات التنبيه
+                      </h3>
+                      <div className="space-y-3">
+                        <label className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 cursor-pointer hover:bg-white hover:border-indigo-200 transition-all group">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-slate-400 group-hover:text-indigo-600 transition-colors">
+                              <Monitor className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-slate-900">تنبيهات المتصفح</p>
+                              <p className="text-[10px] text-slate-500 font-medium">استقبال تنبيهات فورية داخل المتصفح</p>
+                            </div>
+                          </div>
+                          <input
+                            type="checkbox"
+                            className="w-5 h-5 rounded-lg border-slate-300 text-indigo-600 focus:ring-indigo-600 transition-all"
+                            checked={notifSettings.browserNotifications}
+                            onChange={async (e) => {
+                              const checked = e.target.checked;
+                              if (checked && Notification.permission !== 'granted') {
+                                const permission = await Notification.requestPermission();
+                                if (permission !== 'granted') {
+                                  setNotifSettings({ ...notifSettings, browserNotifications: false });
+                                  return;
+                                }
+                              }
+                              setNotifSettings({ ...notifSettings, browserNotifications: checked });
+                            }}
+                          />
+                        </label>
+                        <label className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 cursor-pointer hover:bg-white hover:border-indigo-200 transition-all group">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-slate-400 group-hover:text-indigo-600 transition-colors">
+                              <AtSign className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-slate-900">تنبيهات البريد الإلكتروني</p>
+                              <p className="text-[10px] text-slate-500 font-medium">استلام ملخص يومي وتنبيهات هامة عبر البريد</p>
+                            </div>
+                          </div>
+                          <input
+                            type="checkbox"
+                            className="w-5 h-5 rounded-lg border-slate-300 text-indigo-600 focus:ring-indigo-600 transition-all"
+                            checked={notifSettings.emailNotifications}
+                            onChange={(e) => setNotifSettings({ ...notifSettings, emailNotifications: e.target.checked })}
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-indigo-600" />
+                        أنواع الأحداث
+                      </h3>
+                      <div className="grid grid-cols-1 gap-3">
+                        {[
+                          { key: 'deadline', label: 'المواعيد القانونية', desc: 'تنبيهات اقتراب مواعيد الاستئناف والطعن' },
+                          { key: 'session', label: 'جلسات المحاكم', desc: 'تنبيهات الجلسات القادمة وتحديثات القرارات' },
+                          { key: 'expert', label: 'جلسات الخبراء', desc: 'مواعيد الخبراء والاجتماعات الفنية' },
+                          { key: 'task', label: 'المهام والعمليات', desc: 'المهام المسندة إليك وتحديثات الحالة' },
+                          { key: 'note', label: 'الملاحظات الداخلية', desc: 'عند إضافة ملاحظة جديدة على قضية تتابعها' },
+                          { key: 'consultation', label: 'الاستشارات', desc: 'طلبات الاستشارة الجديدة والردود عليها' },
+                        ].map((type) => (
+                          <label key={type.key} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 cursor-pointer hover:bg-white hover:border-indigo-200 transition-all">
+                            <div>
+                              <p className="text-xs font-bold text-slate-900">{type.label}</p>
+                              <p className="text-[10px] text-slate-500 font-medium">{type.desc}</p>
+                            </div>
+                            <input
+                              type="checkbox"
+                              className="w-4 h-4 rounded-md border-slate-300 text-indigo-600 focus:ring-indigo-600 transition-all"
+                              checked={notifSettings.types[type.key as keyof typeof notifSettings.types]}
+                              onChange={(e) => setNotifSettings({
+                                ...notifSettings,
+                                types: { ...notifSettings.types, [type.key]: e.target.checked }
+                              })}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-4">
+                {saveSuccess && (
+                  <div className="flex items-center gap-2 text-emerald-600 font-bold text-sm">
+                    <CheckCircle2 className="w-5 h-5" />
+                    تم حفظ تفضيلات التنبيهات
+                  </div>
+                )}
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="flex items-center gap-2 bg-indigo-600 text-white px-8 py-4 rounded-2xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all disabled:opacity-50"
+                >
+                  {isSaving ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Save className="w-5 h-5" />}
+                  حفظ التفضيلات
                 </button>
               </div>
             </form>
@@ -548,8 +738,15 @@ export default function Settings({ user }: SettingsProps) {
                         </td>
                         <td className="px-6 py-4">
                           <button
-                            onClick={() => handleDeleteUser(u.uid)}
-                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                            onClick={() => {
+                              if (u.uid === user.uid) return;
+                              setUserToDelete(u.uid);
+                              setIsDeleteModalOpen(true);
+                            }}
+                            className={cn(
+                              "p-2 rounded-xl transition-all",
+                              u.uid === user.uid ? "text-slate-200 cursor-not-allowed" : "text-slate-400 hover:text-red-600 hover:bg-red-50"
+                            )}
                             title="حذف المستخدم"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -581,6 +778,19 @@ export default function Settings({ user }: SettingsProps) {
           </motion.div>
         )}
       </AnimatePresence>
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setUserToDelete(null);
+        }}
+        onConfirm={handleDeleteUser}
+        title="حذف المستخدم"
+        message="هل أنت متأكد من حذف هذا المستخدم؟ لا يمكن التراجع عن هذا الإجراء."
+        confirmLabel="حذف"
+        cancelLabel="إلغاء"
+      />
     </div>
   );
 }

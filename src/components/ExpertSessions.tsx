@@ -3,11 +3,12 @@ import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, query, order
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { ExpertSession, Case, UserProfile } from '../types';
 import { useNavigate } from 'react-router-dom';
-import { Users, Calendar, MapPin, Search, Plus, X, Save, Trash2, CheckCircle2, Clock, AlertCircle, ArrowRight } from 'lucide-react';
-import { format, isPast, isToday, isFuture } from 'date-fns';
+import { Users, Calendar, MapPin, Search, Plus, X, Save, Trash2, CheckCircle2, Clock, AlertCircle, ArrowRight, CalendarPlus, ArrowRightLeft } from 'lucide-react';
+import { format, isPast, isToday, isFuture, parseISO } from 'date-fns';
 import { arSA } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
+import ConfirmModal from './ConfirmModal';
 
 interface ExpertSessionsProps {
   user: UserProfile;
@@ -38,6 +39,8 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
     officeLocation: '',
     notes: ''
   });
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
 
   useEffect(() => {
     let cq = query(collection(db, 'cases'), orderBy('createdAt', 'desc'));
@@ -116,6 +119,7 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
 
       if (!followUpData.isReserved && followUpData.nextDate) {
         updates.nextDate = followUpData.nextDate;
+        updates.isRelayed = true;
         // Optionally create a new pending session automatically
         await addDoc(collection(db, 'expertSessions'), {
           caseId: followUpModal.session.caseId,
@@ -137,10 +141,12 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
     }
   };
 
-  const deleteSession = async (id: string) => {
-    if (!window.confirm('هل أنت متأكد من حذف هذه الجلسة؟')) return;
+  const deleteSession = async () => {
+    if (!sessionToDelete) return;
     try {
-      await deleteDoc(doc(db, 'expertSessions', id));
+      await deleteDoc(doc(db, 'expertSessions', sessionToDelete));
+      setIsDeleteModalOpen(false);
+      setSessionToDelete(null);
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, 'expertSessions');
     }
@@ -177,7 +183,7 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {expertSessions.filter(s => cases.some(c => c.id === s.caseId)).map((session) => {
+        {expertSessions.filter(s => cases.some(c => c.id === s.caseId) && !s.isRelayed).map((session) => {
           const c = getSessionCase(session.caseId);
           const sessionDate = (() => {
             try {
@@ -216,7 +222,13 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
                 </div>
                 {isLawyer && (
                   <div className="flex gap-1">
-                    <button onClick={() => deleteSession(session.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-lg transition-all">
+                    <button 
+                      onClick={() => {
+                        setSessionToDelete(session.id);
+                        setIsDeleteModalOpen(true);
+                      }} 
+                      className="p-2 text-red-400 hover:bg-red-50 rounded-lg transition-all"
+                    >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -583,6 +595,20 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
           </div>
         )}
       </AnimatePresence>
+
+      <ConfirmModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setSessionToDelete(null);
+        }}
+        onConfirm={deleteSession}
+        title="حذف جلسة الخبير"
+        message="هل أنت متأكد من حذف هذه الجلسة؟ لا يمكن التراجع عن هذا الإجراء."
+        confirmLabel="حذف"
+        cancelLabel="إلغاء"
+        variant="danger"
+      />
     </div>
   );
 }

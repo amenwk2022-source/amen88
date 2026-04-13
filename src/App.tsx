@@ -22,6 +22,7 @@ import CalendarView from './components/CalendarView';
 import Judgments from './components/Judgments';
 import Consultations from './components/Consultations';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { Toaster } from 'react-hot-toast';
 
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -66,6 +67,7 @@ export default function App() {
 
   return (
     <ErrorBoundary>
+      <Toaster position="top-center" reverseOrder={false} />
       <Router>
         <Routes>
           {user.role === 'admin' && <Route path="/admin-dashboard" element={<AdminDashboard />} />}

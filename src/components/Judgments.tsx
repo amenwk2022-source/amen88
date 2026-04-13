@@ -8,6 +8,7 @@ import { Judgment, Case, UserProfile } from '../types';
 import { cn } from '../lib/utils';
 import { format, isPast, parseISO, addDays } from 'date-fns';
 import { ar } from 'date-fns/locale';
+import ConfirmModal from './ConfirmModal';
 
 interface JudgmentsProps {
   user: UserProfile;
@@ -32,6 +33,9 @@ export default function Judgments({ user }: JudgmentsProps) {
     notes: ''
   });
 
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [judgmentToDelete, setJudgmentToDelete] = useState<string | null>(null);
+
   useEffect(() => {
     let cq = query(collection(db, 'cases'), orderBy('createdAt', 'desc'));
     if (user.role === 'client') {
@@ -39,7 +43,23 @@ export default function Judgments({ user }: JudgmentsProps) {
     }
 
     const unsub = onSnapshot(query(collection(db, 'judgments'), orderBy('date', 'desc')), (snapshot) => {
-      setJudgments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Judgment)));
+      const fetchedJudgments = snapshot.docs.map(doc => {
+        const data = doc.data();
+        try {
+          if (data.date) {
+            const d = parseISO(data.date);
+            if (isNaN(d.getTime())) throw new Error('Invalid date');
+          }
+          if (data.appealDeadline) {
+            const d = parseISO(data.appealDeadline);
+            if (isNaN(d.getTime())) throw new Error('Invalid deadline');
+          }
+        } catch (e) {
+          console.error('Judgments: Error parsing date for judgment:', doc.id, e);
+        }
+        return { id: doc.id, ...data } as Judgment;
+      });
+      setJudgments(fetchedJudgments);
       setLoading(false);
     }, (err) => {
       handleFirestoreError(err, OperationType.LIST, 'judgments');
@@ -85,10 +105,12 @@ export default function Judgments({ user }: JudgmentsProps) {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('هل أنت متأكد من حذف هذا الحكم؟')) return;
+  const handleDelete = async () => {
+    if (!judgmentToDelete) return;
     try {
-      await deleteDoc(doc(db, 'judgments', id));
+      await deleteDoc(doc(db, 'judgments', judgmentToDelete));
+      setIsDeleteModalOpen(false);
+      setJudgmentToDelete(null);
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, 'judgments');
     }
@@ -201,7 +223,10 @@ export default function Judgments({ user }: JudgmentsProps) {
                       <Edit2 className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => handleDelete(judgment.id)}
+                      onClick={() => {
+                        setJudgmentToDelete(judgment.id);
+                        setIsDeleteModalOpen(true);
+                      }}
                       className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-all"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -278,6 +303,20 @@ export default function Judgments({ user }: JudgmentsProps) {
           );
         })}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setJudgmentToDelete(null);
+        }}
+        onConfirm={handleDelete}
+        title="حذف الحكم"
+        message="هل أنت متأكد من حذف هذا الحكم؟ لا يمكن التراجع عن هذا الإجراء."
+        confirmLabel="حذف"
+        cancelLabel="إلغاء"
+      />
 
       {/* Add/Edit Modal */}
       <AnimatePresence>

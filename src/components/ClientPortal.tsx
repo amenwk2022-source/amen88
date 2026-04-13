@@ -28,6 +28,7 @@ import { Case, Session, ExpertSession, UserProfile, Document, Finance, Procedure
 import { format, parseISO } from 'date-fns';
 import { arSA } from 'date-fns/locale';
 import { cn } from '../lib/utils';
+import { createNotification } from './NotificationCenter';
 
 interface ClientPortalProps {
   user: UserProfile;
@@ -154,7 +155,7 @@ export default function ClientPortal({ user }: ClientPortalProps) {
   const activeCasesCount = cases.filter(c => c.status === 'active').length;
   const today = new Date().toISOString().split('T')[0];
   const upcomingSessions = sessions.filter(s => s.date >= today);
-  const upcomingExpert = expertSessions.filter(s => s.date >= today);
+  const upcomingExpert = expertSessions.filter(s => s.date >= today && (s.status === 'pending' || s.status === 'postponed'));
 
   const totalFees = finances.reduce((sum, f) => sum + (f.totalFees || 0), 0);
   const totalReceived = finances.reduce((sum, f) => sum + (f.receivedAmount || 0), 0);
@@ -177,13 +178,12 @@ export default function ClientPortal({ user }: ClientPortalProps) {
       // Notify lawyers/admins
       const lawyersSnap = await getDocs(query(collection(db, 'users'), where('role', 'in', ['admin', 'lawyer'])));
       for (const lawyer of lawyersSnap.docs) {
-        await addDoc(collection(db, 'notifications'), {
-          userId: lawyer.id,
+        await createNotification(lawyer.id, {
           title: 'طلب استشارة جديد',
           message: `الموكل ${user.name} طلب استشارة بخصوص: ${newRequest.subject}`,
-          type: 'system',
-          date: new Date().toISOString(),
-          isRead: false
+          type: 'consultation',
+          relatedId: user.uid, // Using client ID as relatedId for consultations
+          link: '/consultations'
         });
       }
     } catch (err) {

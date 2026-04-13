@@ -34,7 +34,19 @@ export default function Reports({ user }: ReportsProps) {
     if (user.role === 'client') return;
 
     const unsubCases = onSnapshot(collection(db, 'cases'), (snapshot) => {
-      setCases(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case)));
+      const fetchedCases = snapshot.docs.map(doc => {
+        const data = doc.data();
+        try {
+          if (data.createdAt) {
+            const d = parseISO(data.createdAt);
+            if (isNaN(d.getTime())) throw new Error('Invalid createdAt');
+          }
+        } catch (e) {
+          console.error('Reports: Error parsing case date:', doc.id, e);
+        }
+        return { id: doc.id, ...data } as Case;
+      });
+      setCases(fetchedCases);
     }, (err) => {
       handleFirestoreError(err, OperationType.LIST, 'cases');
     });
@@ -44,7 +56,19 @@ export default function Reports({ user }: ReportsProps) {
       handleFirestoreError(err, OperationType.LIST, 'clients');
     });
     const unsubFinance = onSnapshot(collection(db, 'finance'), (snapshot) => {
-      setFinances(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Finance)));
+      const fetchedFinance = snapshot.docs.map(doc => {
+        const data = doc.data();
+        try {
+          if (data.date) {
+            const d = parseISO(data.date);
+            if (isNaN(d.getTime())) throw new Error('Invalid finance date');
+          }
+        } catch (e) {
+          console.error('Reports: Error parsing finance date:', doc.id, e);
+        }
+        return { id: doc.id, ...data } as Finance;
+      });
+      setFinances(fetchedFinance);
       setLoading(false);
     }, (err) => {
       handleFirestoreError(err, OperationType.LIST, 'finance');

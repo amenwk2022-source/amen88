@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, where } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, where, getDocs } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { Plus, Search, Filter, Briefcase, Scale, Gavel, Archive, MoreVertical, Trash2, Edit2, X, Check, ArrowLeftRight, CalendarPlus, FileCheck, DollarSign, Clock, FileText, Eye, CheckCircle2, Printer, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Case, CaseStatus, Client, Judgment, UserProfile } from '../types';
 import { cn } from '../lib/utils';
 import { addDays, format, parseISO } from 'date-fns';
+import ConfirmModal from './ConfirmModal';
+import { createNotification } from './NotificationCenter';
 
 const STATUS_MAP: Record<CaseStatus, { label: string; color: string; icon: any }> = {
   'pre-filing': { label: 'تحت الرفع', color: 'blue', icon: Briefcase },
@@ -62,6 +64,11 @@ export default function CaseManagement({ user }: CaseManagementProps) {
   const [sessionNextDate, setSessionNextDate] = useState('');
   const [editingSession, setEditingSession] = useState<any | null>(null);
   const caseRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [caseToDelete, setCaseToDelete] = useState<string | null>(null);
+  const [isSessionDeleteModalOpen, setIsSessionDeleteModalOpen] = useState(false);
+  const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
 
   useEffect(() => {
     if (selectedCaseDetails) {
@@ -200,12 +207,28 @@ export default function CaseManagement({ user }: CaseManagementProps) {
   const handleAddNote = async () => {
     if (!newNote.trim() || !selectedCaseDetails) return;
     try {
-      await addDoc(collection(db, 'caseNotes'), {
+      const noteData = {
         caseId: selectedCaseDetails.id,
         text: newNote,
         date: new Date().toISOString(),
         author: user.name
-      });
+      };
+      await addDoc(collection(db, 'caseNotes'), noteData);
+      
+      // Notify lawyers/staff about the new note (except the author)
+      const usersSnap = await getDocs(query(collection(db, 'users'), where('role', 'in', ['admin', 'lawyer', 'staff'])));
+      for (const uDoc of usersSnap.docs) {
+        if (uDoc.id !== user.uid) {
+          await createNotification(uDoc.id, {
+            title: 'ملاحظة جديدة على قضية',
+            message: `أضاف ${user.name} ملاحظة جديدة في قضية رقم ${selectedCaseDetails.caseNumber}`,
+            type: 'note',
+            relatedId: selectedCaseDetails.id,
+            link: `/cases?id=${selectedCaseDetails.id}`
+          });
+        }
+      }
+
       setNewNote('');
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'caseNotes');
@@ -259,11 +282,12 @@ export default function CaseManagement({ user }: CaseManagementProps) {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (user.role === 'client') return;
-    if (!window.confirm('هل أنت متأكد من حذف هذه القضية؟')) return;
+  const handleDelete = async () => {
+    if (user.role === 'client' || !caseToDelete) return;
     try {
-      await deleteDoc(doc(db, 'cases', id));
+      await deleteDoc(doc(db, 'cases', caseToDelete));
+      setIsDeleteModalOpen(false);
+      setCaseToDelete(null);
     } catch (error) {
       console.error('Error deleting case:', error);
     }
@@ -314,11 +338,12 @@ export default function CaseManagement({ user }: CaseManagementProps) {
     setIsSessionModalOpen(true);
   };
 
-  const handleDeleteSession = async (sessionId: string) => {
-    if (user.role === 'client') return;
-    if (!window.confirm('هل أنت متأكد من حذف هذه الجلسة؟')) return;
+  const handleDeleteSession = async () => {
+    if (user.role === 'client' || !sessionToDelete) return;
     try {
-      await deleteDoc(doc(db, 'sessions', sessionId));
+      await deleteDoc(doc(db, 'sessions', sessionToDelete));
+      setIsSessionDeleteModalOpen(false);
+      setSessionToDelete(null);
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, 'sessions');
     }
@@ -383,7 +408,8 @@ export default function CaseManagement({ user }: CaseManagementProps) {
   const timelineEvents = [
     ...caseSessions.map(s => ({ ...s, timelineType: 'session', timelineDate: s.date })),
     ...caseProcedures.map(p => ({ ...p, timelineType: 'procedure', timelineDate: p.date })),
-    ...caseJudgments.map(j => ({ ...j, timelineType: 'judgment', timelineDate: j.date }))
+    ...caseJudgments.map(j => ({ ...j, timelineType: 'judgment', timelineDate: j.date })),
+    ...caseExpertSessions.map(s => ({ ...s, timelineType: 'expert', timelineDate: s.date }))
   ].sort((a, b) => b.timelineDate.localeCompare(a.timelineDate));
 
   const isLawyer = user.role === 'admin' || user.role === 'lawyer';
@@ -572,7 +598,10 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                       <CalendarPlus className="w-5 h-5" />
                     </button>
                     <button 
-                      onClick={() => handleDelete(c.id)}
+                      onClick={() => {
+                        setCaseToDelete(c.id);
+                        setIsDeleteModalOpen(true);
+                      }}
                       className="p-3 bg-slate-50 text-slate-600 rounded-xl hover:bg-red-50 hover:text-red-600 transition-all border border-slate-100"
                     >
                       <Trash2 className="w-5 h-5" />
@@ -706,6 +735,34 @@ export default function CaseManagement({ user }: CaseManagementProps) {
           </div>
         </div>
       )}
+
+      {/* Delete Case Confirmation Modal */}
+      <ConfirmModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setCaseToDelete(null);
+        }}
+        onConfirm={handleDelete}
+        title="حذف القضية"
+        message="هل أنت متأكد من حذف هذه القضية؟ لا يمكن التراجع عن هذا الإجراء."
+        confirmLabel="حذف"
+        cancelLabel="إلغاء"
+      />
+
+      {/* Delete Session Confirmation Modal */}
+      <ConfirmModal
+        isOpen={isSessionDeleteModalOpen}
+        onClose={() => {
+          setIsSessionDeleteModalOpen(false);
+          setSessionToDelete(null);
+        }}
+        onConfirm={handleDeleteSession}
+        title="حذف الجلسة"
+        message="هل أنت متأكد من حذف هذه الجلسة؟ لا يمكن التراجع عن هذا الإجراء."
+        confirmLabel="حذف"
+        cancelLabel="إلغاء"
+      />
 
       {/* Add/Edit Modal */}
       <AnimatePresence>
@@ -1077,7 +1134,8 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                           <div className={cn(
                             "absolute right-4 top-1 w-4 h-4 rounded-full border-4 border-white shadow-sm z-10",
                             event.timelineType === 'session' ? "bg-indigo-600" : 
-                            event.timelineType === 'procedure' ? "bg-emerald-600" : "bg-amber-600"
+                            event.timelineType === 'procedure' ? "bg-emerald-600" : 
+                            event.timelineType === 'expert' ? "bg-purple-600" : "bg-amber-600"
                           )} />
                           <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all">
                             <div className="flex items-center justify-between mb-2">
@@ -1097,7 +1155,8 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                                     <button 
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        handleDeleteSession(event.id);
+                                        setSessionToDelete(event.id);
+                                        setIsSessionDeleteModalOpen(true);
                                       }}
                                       className="p-1 text-slate-400 hover:text-red-600 transition-all"
                                     >
@@ -1109,19 +1168,24 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                               <span className={cn(
                                 "px-2 py-0.5 rounded-lg text-[10px] font-black uppercase",
                                 event.timelineType === 'session' ? "bg-indigo-50 text-indigo-600" : 
-                                event.timelineType === 'procedure' ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"
+                                event.timelineType === 'procedure' ? "bg-emerald-50 text-emerald-600" : 
+                                event.timelineType === 'expert' ? "bg-purple-50 text-purple-600" : "bg-amber-50 text-amber-600"
                               )}>
                                 {event.timelineType === 'session' ? 'جلسة' : 
-                                 event.timelineType === 'procedure' ? 'إجراء' : 'حكم'}
+                                 event.timelineType === 'procedure' ? 'إجراء' : 
+                                 event.timelineType === 'expert' ? 'جلسة خبير' : 'حكم'}
                               </span>
                             </div>
                             <h4 className="text-sm font-bold text-slate-900">
                               {event.timelineType === 'session' ? (event.decision || 'جلسة مرافعة') : 
-                               event.timelineType === 'procedure' ? event.type : `حكم ${event.type === 'initial' ? 'ابتدائي' : event.type === 'appeal' ? 'استئناف' : 'تمييز'}`}
+                               event.timelineType === 'procedure' ? event.type : 
+                               event.timelineType === 'expert' ? `جلسة خبير: ${event.expertName}` :
+                               `حكم ${event.type === 'initial' ? 'ابتدائي' : event.type === 'appeal' ? 'استئناف' : 'تمييز'}`}
                             </h4>
                             <p className="text-xs text-slate-500 font-medium mt-1">
                               {event.timelineType === 'session' ? (event.decision ? '' : 'بانتظار القرار') : 
-                               event.timelineType === 'procedure' ? event.notes : event.result}
+                               event.timelineType === 'procedure' ? event.notes : 
+                               event.timelineType === 'expert' ? event.decision : event.result}
                             </p>
                             {event.nextDate && (
                               <div className="mt-3 pt-3 border-t border-slate-50 flex items-center gap-2">
@@ -1199,7 +1263,15 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                               <div key={note.id} className="bg-slate-50 p-3 rounded-xl border border-slate-100 group relative">
                                 <p className="text-sm text-slate-700 font-medium leading-relaxed">{note.text}</p>
                                 <div className="flex items-center justify-between mt-2">
-                                  <span className="text-[10px] text-slate-400 font-bold">{note.author} - {format(parseISO(note.date), 'yyyy/MM/dd HH:mm')}</span>
+                                  <span className="text-[10px] text-slate-400 font-bold">
+                                    {note.author} - {(() => {
+                                      try {
+                                        return format(parseISO(note.date), 'yyyy/MM/dd HH:mm');
+                                      } catch (e) {
+                                        return '---';
+                                      }
+                                    })()}
+                                  </span>
                                   <button 
                                     onClick={() => handleDeleteNote(note.id)}
                                     className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-all"

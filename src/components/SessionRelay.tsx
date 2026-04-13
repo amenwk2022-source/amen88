@@ -10,6 +10,7 @@ import { format, isPast, isToday, isFuture, addDays } from 'date-fns';
 import { arSA } from 'date-fns/locale';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import ConfirmModal from './ConfirmModal';
 
 interface SessionRelayProps {
   user: UserProfile;
@@ -51,6 +52,11 @@ export default function SessionRelay({ user }: SessionRelayProps) {
 
   const [isDecisionModalOpen, setIsDecisionModalOpen] = useState(false);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
+
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [sessionToDeleteId, setSessionToDeleteId] = useState<string | null>(null);
+  const [isOmitModalOpen, setIsOmitModalOpen] = useState(false);
+  const [sessionToOmitId, setSessionToOmitId] = useState<string | null>(null);
 
   useEffect(() => {
     let cq = query(collection(db, 'cases'), orderBy('createdAt', 'desc'));
@@ -185,13 +191,28 @@ export default function SessionRelay({ user }: SessionRelayProps) {
     }
   };
 
-  const handleDeleteSession = async (id: string) => {
-    if (user.role === 'client') return;
-    if (!window.confirm('هل أنت متأكد من حذف هذه الجلسة؟')) return;
+  const handleDeleteSession = async () => {
+    if (user.role === 'client' || !sessionToDeleteId) return;
     try {
-      await deleteDoc(doc(db, 'sessions', id));
+      await deleteDoc(doc(db, 'sessions', sessionToDeleteId));
+      setIsDeleteModalOpen(false);
+      setSessionToDeleteId(null);
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, 'sessions');
+    }
+  };
+
+  const handleOmitSession = async () => {
+    if (!sessionToOmitId) return;
+    try {
+      await updateDoc(doc(db, 'sessions', sessionToOmitId), {
+        decision: 'تم التجاوز',
+        updatedAt: new Date().toISOString()
+      });
+      setIsOmitModalOpen(false);
+      setSessionToOmitId(null);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'sessions');
     }
   };
 
@@ -364,7 +385,8 @@ export default function SessionRelay({ user }: SessionRelayProps) {
       }
       const sDate = s.date.split('T')[0];
       const courtMatch = selectedCourt === 'ALL' || s.caseInfo?.court === selectedCourt;
-      return sDate === displayDateStr && s.caseInfo && courtMatch;
+      const isActive = s.status === 'pending' || s.status === 'postponed';
+      return sDate === displayDateStr && s.caseInfo && courtMatch && isActive;
     });
 
   const stats = {
@@ -745,12 +767,8 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                           </button>
                           <button
                             onClick={() => {
-                              if (window.confirm('هل أنت متأكد من تجاهل هذه الجلسة؟')) {
-                                updateDoc(doc(db, 'sessions', session.id), {
-                                  decision: 'تم التجاوز',
-                                  updatedAt: new Date().toISOString()
-                                });
-                              }
+                              setSessionToOmitId(session.id);
+                              setIsOmitModalOpen(true);
                             }}
                             className="flex items-center gap-1 text-[10px] font-black text-slate-400 hover:text-slate-600"
                           >
@@ -765,7 +783,10 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                             تحويل لحكم
                           </button>
                           <button
-                            onClick={() => handleDeleteSession(session.id)}
+                            onClick={() => {
+                              setSessionToDeleteId(session.id);
+                              setIsDeleteModalOpen(true);
+                            }}
                             className="flex items-center gap-1 text-[10px] font-black text-red-600 hover:text-red-800"
                           >
                             <Trash2 className="w-3 h-3" />
@@ -1309,6 +1330,34 @@ export default function SessionRelay({ user }: SessionRelayProps) {
           </div>
         )}
       </AnimatePresence>
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setSessionToDeleteId(null);
+        }}
+        onConfirm={handleDeleteSession}
+        title="حذف الجلسة"
+        message="هل أنت متأكد من حذف هذه الجلسة؟ لا يمكن التراجع عن هذا الإجراء."
+        confirmLabel="حذف"
+        cancelLabel="إلغاء"
+      />
+
+      {/* Omit Confirmation Modal */}
+      <ConfirmModal
+        isOpen={isOmitModalOpen}
+        onClose={() => {
+          setIsOmitModalOpen(false);
+          setSessionToOmitId(null);
+        }}
+        onConfirm={handleOmitSession}
+        title="تجاهل الجلسة"
+        message="هل أنت متأكد من تجاهل هذه الجلسة؟ سيتم تسجيلها كـ 'تم التجاوز'."
+        confirmLabel="تجاهل"
+        cancelLabel="إلغاء"
+        variant="warning"
+      />
     </div>
   );
 }
