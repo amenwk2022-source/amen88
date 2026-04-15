@@ -32,7 +32,8 @@ import {
   DollarSign,
   Bell,
   Monitor,
-  AtSign
+  AtSign,
+  FileText
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -72,8 +73,10 @@ export default function Settings({ user }: SettingsProps) {
   const [systemSettings, setSystemSettings] = useState<SystemSettings>({
     id: 'global',
     officeName: 'مكتب المحاماة الدولي',
+    officeDescription: 'للمحاماة والاستشارات القانونية والتحكيم',
     officeAddress: 'مدينة الكويت، برج التحرير، الطابق 15',
     officePhone: '+965 1234 5678',
+    officeFax: '+965 1234 5679',
     officeEmail: 'info@lawyer-office.com',
     currency: 'د.ك',
     caseTypes: ['مدني', 'جنائي', 'تجاري', 'أحوال شخصية', 'عمالي', 'إداري'],
@@ -558,6 +561,19 @@ export default function Settings({ user }: SettingsProps) {
                       />
                     </div>
                   </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <label className="text-sm font-bold text-slate-700">وصف المكتب (يظهر في التقارير)</label>
+                    <div className="relative">
+                      <FileText className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type="text"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-12 pl-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 outline-none transition-all"
+                        value={systemSettings.officeDescription || ''}
+                        onChange={(e) => setSystemSettings({ ...systemSettings, officeDescription: e.target.value })}
+                        placeholder="مثال: للمحاماة والاستشارات القانونية والتحكيم"
+                      />
+                    </div>
+                  </div>
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-slate-700">العنوان</label>
                     <div className="relative">
@@ -579,6 +595,18 @@ export default function Settings({ user }: SettingsProps) {
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-12 pl-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 outline-none transition-all"
                         value={systemSettings.officePhone}
                         onChange={(e) => setSystemSettings({ ...systemSettings, officePhone: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">رقم الفاكس</label>
+                    <div className="relative">
+                      <Phone className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type="text"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-12 pl-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 outline-none transition-all"
+                        value={systemSettings.officeFax || ''}
+                        onChange={(e) => setSystemSettings({ ...systemSettings, officeFax: e.target.value })}
                       />
                     </div>
                   </div>

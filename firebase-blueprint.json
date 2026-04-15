@@ -114,6 +114,8 @@
     "/procedures/{procedureId}": { "schema": "Procedure", "description": "Case procedures" },
     "/finance/{financeId}": { "schema": "Finance", "description": "Financial records" },
     "/documents/{documentId}": { "schema": "Document", "description": "Case documents" },
-    "/caseNotes/{noteId}": { "schema": "CaseNote", "description": "Internal case notes" }
+    "/caseNotes/{noteId}": { "schema": "CaseNote", "description": "Internal case notes" },
+    "/notificationSettings/{userId}": { "schema": "object", "description": "User notification preferences" },
+    "/settings/{settingId}": { "schema": "object", "description": "Global system and office settings" }
   }
 }

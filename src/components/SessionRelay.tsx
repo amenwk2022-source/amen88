@@ -4,7 +4,7 @@ import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { CalendarClock, ArrowRightLeft, AlertCircle, CheckCircle2, Clock, Search, Filter, Download, MessageSquare, Save, X, Scale, FileText, ImageIcon, Trash2, Printer, CalendarDays, CheckCircle, XCircle, Plus, Edit2, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Session, Case, UserProfile, ExpertSession } from '../types';
+import { Session, Case, UserProfile, ExpertSession, SystemSettings } from '../types';
 import { cn } from '../lib/utils';
 import { format, isPast, isToday, isFuture, addDays } from 'date-fns';
 import { arSA } from 'date-fns/locale';
@@ -22,6 +22,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [expertSessions, setExpertSessions] = useState<ExpertSession[]>([]);
   const [cases, setCases] = useState<Case[]>([]);
+  const [systemSettings, setSystemSettings] = useState<SystemSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'today' | 'upcoming' | 'omitted' | 'search'>('today');
 
@@ -80,6 +81,19 @@ export default function SessionRelay({ user }: SessionRelayProps) {
     const expertUnsub = onSnapshot(collection(db, 'expertSessions'), (snapshot) => {
       setExpertSessions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExpertSession)));
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'expertSessions'));
+
+    // Load System Settings
+    const loadSettings = async () => {
+      try {
+        const settingsSnap = await getDoc(doc(db, 'settings', 'global'));
+        if (settingsSnap.exists()) {
+          setSystemSettings(settingsSnap.data() as SystemSettings);
+        }
+      } catch (err) {
+        console.error('Error loading settings:', err);
+      }
+    };
+    loadSettings();
 
     return () => {
       unsub();
@@ -596,12 +610,12 @@ export default function SessionRelay({ user }: SessionRelayProps) {
           <div className="p-10 border-b-8 border-slate-900">
             <div className="flex justify-between items-start mb-12">
               <div className="text-right space-y-2">
-                <h2 className="font-black text-4xl text-slate-900 tracking-tight">مكتب المحامي محمد امين علي الصايغ</h2>
-                <p className="text-xl text-slate-600 font-bold">للمحاماة والاستشارات القانونية والتحكيم</p>
+                <h2 className="font-black text-4xl text-slate-900 tracking-tight">{systemSettings?.officeName || 'مكتب المحامي محمد امين علي الصايغ'}</h2>
+                <p className="text-xl text-slate-600 font-bold">{systemSettings?.officeDescription || 'للمحاماة والاستشارات القانونية والتحكيم'}</p>
                 <div className="flex flex-col text-sm text-slate-500 font-bold mt-4 space-y-1">
-                  <span>دولة الكويت - مدينة الكويت</span>
-                  <span>برج التجارية - الدور 25</span>
-                  <span>هاتف: 22200000 - فاكس: 22200001</span>
+                  <span>{systemSettings?.officeAddress || 'دولة الكويت - مدينة الكويت'}</span>
+                  {systemSettings?.officeAddress && <span>{systemSettings.officeAddress.includes('برج') ? '' : 'برج التجارية - الدور 25'}</span>}
+                  <span>هاتف: {systemSettings?.officePhone || '22200000'} {systemSettings?.officeFax ? `- فاكس: ${systemSettings.officeFax}` : ''}</span>
                 </div>
               </div>
               <div className="flex flex-col items-end">

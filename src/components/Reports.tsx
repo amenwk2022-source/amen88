@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, onSnapshot, query, orderBy, where } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, where, getDoc, doc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { FileText, Download, Printer, Filter, Calendar, Briefcase, Users, TrendingUp, CheckCircle2, AlertCircle, Search, X, Scale } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Case, Client, Session, Finance, UserProfile } from '../types';
+import { Case, Client, Session, Finance, UserProfile, SystemSettings } from '../types';
 import { cn } from '../lib/utils';
 import { format, isWithinInterval, parseISO, startOfDay, endOfDay } from 'date-fns';
 import { arSA } from 'date-fns/locale';
@@ -18,6 +18,7 @@ export default function Reports({ user }: ReportsProps) {
   const [cases, setCases] = useState<Case[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [finances, setFinances] = useState<Finance[]>([]);
+  const [systemSettings, setSystemSettings] = useState<SystemSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [reportType, setReportType] = useState<'cases' | 'finance' | 'clients'>('cases');
   const [isExporting, setIsExporting] = useState(false);
@@ -74,6 +75,19 @@ export default function Reports({ user }: ReportsProps) {
       handleFirestoreError(err, OperationType.LIST, 'finance');
       setLoading(false);
     });
+
+    // Load System Settings
+    const loadSettings = async () => {
+      try {
+        const settingsSnap = await getDoc(doc(db, 'settings', 'global'));
+        if (settingsSnap.exists()) {
+          setSystemSettings(settingsSnap.data() as SystemSettings);
+        }
+      } catch (err) {
+        console.error('Error loading settings:', err);
+      }
+    };
+    loadSettings();
 
     return () => {
       unsubCases();
@@ -320,9 +334,9 @@ export default function Reports({ user }: ReportsProps) {
               <Scale className="w-10 h-10 text-white" />
             </div>
             <div>
-              <h1 className="text-3xl font-black text-slate-900 tracking-tighter">الأمين</h1>
-              <p className="text-sm font-bold text-slate-500">مكتب المحامي محمد امين علي الصايغ</p>
-              <p className="text-[10px] font-bold text-slate-400 mt-1">نظام إدارة المكاتب القانونية الذكي</p>
+              <h1 className="text-3xl font-black text-slate-900 tracking-tighter">{systemSettings?.officeName.split(' ')[0] || 'الأمين'}</h1>
+              <p className="text-sm font-bold text-slate-500">{systemSettings?.officeName || 'مكتب المحامي محمد امين علي الصايغ'}</p>
+              <p className="text-[10px] font-bold text-slate-400 mt-1">{systemSettings?.officeDescription || 'نظام إدارة المكاتب القانونية الذكي'}</p>
             </div>
           </div>
           <div className="text-left">
@@ -515,7 +529,7 @@ export default function Reports({ user }: ReportsProps) {
 
         <div className="hidden print:block mt-12 text-center">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-            هذا التقرير سري وخاص بمكتب المحامي محمد امين علي الصايغ © {new Date().getFullYear()}
+            هذا التقرير سري وخاص ب{systemSettings?.officeName || 'مكتب المحامي محمد امين علي الصايغ'} © {new Date().getFullYear()}
           </p>
           <p className="text-[8px] font-bold text-slate-300 mt-1">تم الإنشاء بواسطة نظام الأمين الذكي</p>
         </div>

@@ -152,8 +152,10 @@ export interface ConsultationRequest {
 export interface SystemSettings {
   id: string;
   officeName: string;
+  officeDescription?: string;
   officeAddress: string;
   officePhone: string;
+  officeFax?: string;
   officeEmail: string;
   currency: string;
   caseTypes: string[];

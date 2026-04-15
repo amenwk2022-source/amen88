@@ -124,6 +124,16 @@ service cloud.firestore {
       allow write: if isAdmin() || isLawyer() || isStaff();
     }
 
+    match /notificationSettings/{userId} {
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    match /settings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
     match /tasks/{taskId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isValidTask(request.resource.data) && (isAdmin() || isLawyer() || isStaff());
