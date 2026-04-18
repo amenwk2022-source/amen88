@@ -183,22 +183,22 @@ export default function ProcedureManagement({ user }: ProcedureProps) {
                       <div className="p-2 bg-indigo-50 rounded-lg">
                         <ClipboardList className="w-5 h-5 text-indigo-600" />
                       </div>
-                      <h3 className="text-lg font-black text-slate-900">{p.type}</h3>
+                      <h3 className="text-2xl font-black text-slate-900">{p.type}</h3>
                     </div>
-                    <span className="text-xs font-bold text-slate-400 flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
+                    <span className="text-sm font-bold text-slate-500 flex items-center gap-1">
+                      <Clock className="w-4 h-4" />
                       {format(new Date(p.date), 'yyyy/MM/dd')}
                     </span>
                   </div>
                   
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-base">
                     <div className="flex items-center gap-2">
                       <span className="text-slate-400 font-bold">القضية:</span>
-                      <span className="text-slate-900 font-bold">{c?.caseNumber || '---'}</span>
+                      <span className="text-slate-900 font-extrabold">{c?.caseNumber || '---'}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-slate-400 font-bold">الموكل:</span>
-                      <span className="text-slate-900 font-bold">{c?.clientName || '---'}</span>
+                      <span className="text-slate-900 font-extrabold">{c?.clientName || '---'}</span>
                     </div>
                   </div>
 

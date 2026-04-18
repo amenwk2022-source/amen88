@@ -136,6 +136,19 @@ export default function Reports({ user }: ReportsProps) {
         logging: false,
         backgroundColor: '#ffffff',
         onclone: (clonedDoc) => {
+          // Add a style tag to fix Arabic character fragmentation
+          const style = clonedDoc.createElement('style');
+          style.innerHTML = `
+            * {
+              letter-spacing: normal !important;
+              letter-spacing: 0 !important;
+              text-rendering: auto !important;
+              -webkit-font-feature-settings: "kern" 1, "liga" 1, "clig" 1, "calt" 1 !important;
+              font-feature-settings: "kern" 1, "liga" 1, "clig" 1, "calt" 1 !important;
+            }
+          `;
+          clonedDoc.head.appendChild(style);
+
           const el = clonedDoc.getElementById('report-content');
           if (el) {
             el.style.padding = '40px';
@@ -403,19 +416,19 @@ export default function Reports({ user }: ReportsProps) {
             <table className="w-full text-right border-collapse">
               <thead>
                 <tr className="border-b-2 border-slate-100">
-                  <th className="py-4 font-black text-slate-900">رقم القضية</th>
-                  <th className="py-4 font-black text-slate-900">الموكل</th>
-                  <th className="py-4 font-black text-slate-900">المحكمة</th>
-                  <th className="py-4 font-black text-slate-900">الحالة</th>
-                  <th className="py-4 font-black text-slate-900">التاريخ</th>
+                  <th className="py-4 font-black text-slate-900 text-lg text-right">رقم القضية</th>
+                  <th className="py-4 font-black text-slate-900 text-lg text-right">الموكل</th>
+                  <th className="py-4 font-black text-slate-900 text-lg text-right">المحكمة</th>
+                  <th className="py-4 font-black text-slate-900 text-lg text-right">الحالة</th>
+                  <th className="py-4 font-black text-slate-900 text-lg text-right">التاريخ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {filteredCases.map((c) => (
                   <tr key={c.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="py-4 font-bold text-slate-900">{c.caseNumber || '---'}</td>
-                    <td className="py-4 text-slate-600 font-medium">{c.clientName}</td>
-                    <td className="py-4 text-slate-600 font-medium">{c.court || '---'}</td>
+                    <td className="py-4 font-black text-slate-900 text-2xl">{c.caseNumber || '---'}</td>
+                    <td className="py-4 text-slate-800 font-extrabold text-xl">{c.clientName}</td>
+                    <td className="py-4 text-slate-700 font-bold text-lg">{c.court || '---'}</td>
                     <td className="py-4">
                       <span className={cn(
                         "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest",
@@ -454,22 +467,22 @@ export default function Reports({ user }: ReportsProps) {
             <table className="w-full text-right border-collapse">
               <thead>
                 <tr className="border-b-2 border-slate-100">
-                  <th className="py-4 font-black text-slate-900">القضية</th>
-                  <th className="py-4 font-black text-slate-900">إجمالي الأتعاب</th>
-                  <th className="py-4 font-black text-slate-900">المستلم</th>
-                  <th className="py-4 font-black text-slate-900">المتبقي</th>
-                  <th className="py-4 font-black text-slate-900">المصروفات</th>
+                  <th className="py-4 font-black text-slate-900 text-lg text-right">القضية</th>
+                  <th className="py-4 font-black text-slate-900 text-lg text-right">إجمالي الأتعاب</th>
+                  <th className="py-4 font-black text-slate-900 text-lg text-right">المستلم</th>
+                  <th className="py-4 font-black text-slate-900 text-lg text-right">المتبقي</th>
+                  <th className="py-4 font-black text-slate-900 text-lg text-right">المصروفات</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {filteredFinances.map((f) => {
                   return (
                     <tr key={f.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="py-4 font-bold text-slate-900">{f.caseNumber || '---'}</td>
-                      <td className="py-4 text-slate-600 font-medium">{f.totalFees.toLocaleString()} د.ك</td>
-                      <td className="py-4 text-emerald-600 font-bold">{f.receivedAmount.toLocaleString()} د.ك</td>
-                      <td className="py-4 text-red-600 font-bold">{(f.totalFees - f.receivedAmount).toLocaleString()} د.ك</td>
-                      <td className="py-4 text-slate-600 font-medium">{(f.expenses + f.sundries).toLocaleString()} د.ك</td>
+                    <td className="py-4 font-black text-slate-900 text-2xl">{f.caseNumber || '---'}</td>
+                      <td className="py-4 text-slate-700 font-bold text-lg">{f.totalFees.toLocaleString()} د.ك</td>
+                      <td className="py-4 text-emerald-600 font-bold text-lg">{f.receivedAmount.toLocaleString()} د.ك</td>
+                      <td className="py-4 text-red-600 font-bold text-lg">{(f.totalFees - f.receivedAmount).toLocaleString()} د.ك</td>
+                      <td className="py-4 text-slate-700 font-bold text-lg">{(f.expenses + f.sundries).toLocaleString()} د.ك</td>
                     </tr>
                   );
                 })}
@@ -488,19 +501,19 @@ export default function Reports({ user }: ReportsProps) {
             <table className="w-full text-right border-collapse">
               <thead>
                 <tr className="border-b-2 border-slate-100">
-                  <th className="py-4 font-black text-slate-900">الاسم</th>
-                  <th className="py-4 font-black text-slate-900">الهاتف</th>
-                  <th className="py-4 font-black text-slate-900">الرقم المدني</th>
-                  <th className="py-4 font-black text-slate-900">عدد القضايا</th>
+                  <th className="py-4 font-black text-slate-900 text-lg text-right">الاسم</th>
+                  <th className="py-4 font-black text-slate-900 text-lg text-right">الهاتف</th>
+                  <th className="py-4 font-black text-slate-900 text-lg text-right">الرقم المدني</th>
+                  <th className="py-4 font-black text-slate-900 text-lg text-right">عدد القضايا</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {filteredClients.map((client) => (
                   <tr key={client.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="py-4 font-bold text-slate-900">{client.name}</td>
-                    <td className="py-4 text-slate-600 font-medium">{client.phone}</td>
-                    <td className="py-4 text-slate-600 font-medium">{client.civilId || '---'}</td>
-                    <td className="py-4 font-black text-indigo-600">
+                    <td className="py-4 font-black text-slate-900 text-2xl">{client.name}</td>
+                    <td className="py-4 text-slate-700 font-bold text-lg">{client.phone}</td>
+                    <td className="py-4 text-slate-700 font-bold text-lg">{client.civilId || '---'}</td>
+                    <td className="py-4 font-black text-indigo-600 text-xl">
                       {cases.filter(c => c.clientId === client.id).length}
                     </td>
                   </tr>
@@ -529,7 +542,7 @@ export default function Reports({ user }: ReportsProps) {
 
         <div className="hidden print:block mt-12 text-center">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-            هذا التقرير سري وخاص ب{systemSettings?.officeName || 'مكتب المحامي محمد امين علي الصايغ'} © {new Date().getFullYear()}
+            هذا التقرير سري وخاص بـ {systemSettings?.officeName || 'مكتب المحامي محمد امين علي الصايغ'} © {new Date().getFullYear()}
           </p>
           <p className="text-[8px] font-bold text-slate-300 mt-1">تم الإنشاء بواسطة نظام الأمين الذكي</p>
         </div>

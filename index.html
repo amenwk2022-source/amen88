@@ -5,6 +5,38 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>My Google AI Studio App</title>
     <script>
+      // 🛡️ Robust Global JSON.parse Patch
+      // Crucial for catching "undefined is not valid JSON" errors originating from libraries or minified code
+      (function() {
+        const originalParse = JSON.parse;
+        JSON.parse = function(text, reviver) {
+          // Handle cases where the input is the string 'undefined', literal undefined, or null
+          // Chrome/V8 throws "undefined is not valid JSON" for JSON.parse('undefined')
+          if (text === 'undefined' || text === undefined) {
+            console.warn('[JSON-Patch] Intercepted parse for "undefined". Returning undefined to prevent crash.');
+            return undefined;
+          }
+          
+          if (typeof text === 'string' && text.trim() === 'undefined') {
+            console.warn('[JSON-Patch] Intercepted parse for trimmed "undefined". Returning undefined.');
+            return undefined;
+          }
+
+          try {
+            return originalParse.apply(this, arguments);
+          } catch (e) {
+            // Enhanced logging for debugging
+            console.groupCollapsed('%c[JSON-Patch] Parse Failed', 'color: white; background: red; padding: 2px 5px; border-radius: 3px;');
+            console.error('Value:', text);
+            console.error('Type:', typeof text);
+            console.error('Error:', e.message);
+            console.trace();
+            console.groupEnd();
+            throw e;
+          }
+        };
+      })();
+
       // Fix for "Cannot set property fetch of #<Window> which has only a getter"
       // Some libraries (like node-fetch polyfills) try to override window.fetch
       // which can fail in certain environments where fetch is a read-only getter.

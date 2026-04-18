@@ -3,7 +3,7 @@ import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateD
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { Plus, Search, MoreVertical, Phone, CreditCard, MapPin, FileText, Trash2, Edit2, X, Check, Printer, Eye, Scale, Clock, Briefcase } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Client, Case, Session } from '../types';
+import { Client, Case, Session, SystemSettings } from '../types';
 import { cn } from '../lib/utils';
 import { format } from 'date-fns';
 import { arSA } from 'date-fns/locale';
@@ -17,6 +17,7 @@ export default function ClientManagement() {
   const [selectedClientForCases, setSelectedClientForCases] = useState<Client | null>(null);
   const [isAddCaseModalOpen, setIsAddCaseModalOpen] = useState(false);
   const [clientCases, setClientCases] = useState<Case[]>([]);
+  const [systemSettings, setSystemSettings] = useState<SystemSettings | null>(null);
   const [allSessions, setAllSessions] = useState<Session[]>([]);
   const [formData, setFormData] = useState<Partial<Client>>({
     name: '',
@@ -80,9 +81,16 @@ export default function ClientManagement() {
       setAllSessions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Session)));
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'sessions'));
 
+    const settingsUnsub = onSnapshot(doc(db, 'settings', 'global'), (snapshot) => {
+      if (snapshot.exists()) {
+        setSystemSettings(snapshot.data() as SystemSettings);
+      }
+    });
+
     return () => {
       unsub();
       unsubSessions();
+      settingsUnsub();
     };
   }, []);
 
@@ -196,7 +204,7 @@ export default function ClientManagement() {
                   {client.name[0]}
                 </div>
                 <div>
-                  <h3 className="text-lg font-black text-slate-900 group-hover:text-indigo-600 transition-colors">{client.name}</h3>
+                  <h3 className="text-2xl font-black text-slate-900 group-hover:text-indigo-600 transition-colors">{client.name}</h3>
                   <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">موكل دائم</p>
                 </div>
               </div>
@@ -220,20 +228,20 @@ export default function ClientManagement() {
               </div>
             </div>
 
-            <div className="space-y-3">
-              <div className="flex items-center gap-3 text-sm font-medium text-slate-600">
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 text-base font-bold text-slate-700">
                 <Phone className="w-4 h-4 text-slate-400" />
                 <span>{client.phone}</span>
               </div>
-              <div className="flex items-center gap-3 text-sm font-medium text-slate-600">
+              <div className="flex items-center gap-3 text-base font-bold text-slate-700">
                 <CreditCard className="w-4 h-4 text-slate-400" />
                 <span>الرقم المدني: {client.civilId || 'غير متوفر'}</span>
               </div>
-              <div className="flex items-center gap-3 text-sm font-medium text-slate-600">
+              <div className="flex items-center gap-3 text-base font-bold text-slate-700">
                 <FileText className="w-4 h-4 text-slate-400" />
                 <span>رقم الوكالة: {client.poaNumber || 'غير متوفر'}</span>
               </div>
-              <div className="flex items-center gap-3 text-sm font-medium text-slate-600">
+              <div className="flex items-center gap-3 text-base font-bold text-slate-700">
                 <MapPin className="w-4 h-4 text-slate-400" />
                 <span className="truncate">{client.address || 'العنوان غير مسجل'}</span>
               </div>
@@ -450,9 +458,9 @@ export default function ClientManagement() {
         <div className="hidden print:block p-12 bg-white text-right" dir="rtl">
           <div className="flex justify-between items-start mb-10 border-b-2 border-slate-900 pb-8">
             <div>
-              <h1 className="text-2xl font-black text-slate-900">مكتب المحامي محمد امين علي الصايغ</h1>
-              <p className="text-sm text-slate-500 font-bold">للمحاماة والاستشارات القانونية</p>
-              <p className="text-[10px] text-slate-400 mt-1">دولة الكويت - برج التجارية - الدور 25</p>
+              <h1 className="text-2xl font-black text-slate-900">{systemSettings?.officeName || 'مكتب المحامي محمد امين علي الصايغ'}</h1>
+              <p className="text-sm text-slate-500 font-bold">{systemSettings?.officeDescription || 'للمحاماة والاستشارات القانونية'}</p>
+              <p className="text-[10px] text-slate-400 mt-1">{systemSettings?.officeAddress || 'دولة الكويت - برج التجارية - الدور 25'}</p>
             </div>
             <div className="text-left">
               <p className="font-bold text-slate-900 text-sm">تاريخ الطباعة: {new Date().toLocaleDateString('ar-EG')}</p>

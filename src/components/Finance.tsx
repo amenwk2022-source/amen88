@@ -175,8 +175,8 @@ export default function FinanceManagement({ user }: FinanceManagementProps) {
                     <DollarSign className="w-5 h-5 text-indigo-600" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h4 className="text-sm font-bold text-slate-900 truncate">قضية: {c?.caseNumber || '---'}</h4>
-                    <p className="text-xs text-slate-500 font-medium truncate">{c?.clientName}</p>
+                    <h4 className="text-lg font-black text-slate-900 truncate">قضية: {c?.caseNumber || '---'}</h4>
+                    <p className="text-sm text-slate-600 font-extrabold truncate">{c?.clientName}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-black text-slate-900">{f.receivedAmount.toLocaleString()} د.ك</p>

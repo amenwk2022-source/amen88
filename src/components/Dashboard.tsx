@@ -65,7 +65,8 @@ export default function Dashboard({ user }: DashboardProps) {
   const [recentNotifications, setRecentNotifications] = useState<AppNotification[]>([]);
   const [cases, setCases] = useState<Case[]>([]);
   const [allSessions, setAllSessions] = useState<Session[]>([]);
-  const [omittedSessions, setOmittedSessions] = useState<Session[]>([]);
+  const [allExpertSessions, setAllExpertSessions] = useState<ExpertSession[]>([]);
+  const [omittedSessions, setOmittedSessions] = useState<(Session | ExpertSession)[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingConsultations, setPendingConsultations] = useState<ConsultationRequest[]>([]);
 
@@ -77,6 +78,12 @@ export default function Dashboard({ user }: DashboardProps) {
       const fetchedCases = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case));
       setCases(fetchedCases);
       
+      if (fetchedCases.length === 0) {
+        setPieData([]);
+        setChartData([]);
+        return;
+      }
+
       // Calculate Pie Chart Data
       const statusCounts = fetchedCases.reduce((acc: any, c) => {
         const status = c.status || 'active';
@@ -85,11 +92,11 @@ export default function Dashboard({ user }: DashboardProps) {
       }, {});
 
       const statusLabels: any = {
+        'pre-filing': 'تحت الرفع',
         'active': 'متداولة',
-        'archive': 'أرشيف',
-        'judgment': 'حكم قضائي',
         'execution': 'تنفيذ',
-        'draft': 'تحت الرفع'
+        'archive': 'أرشيف',
+        'judgment': 'حكم قضائي'
       };
 
       const newPieData = Object.entries(statusCounts).map(([status, count]) => ({
@@ -108,11 +115,20 @@ export default function Dashboard({ user }: DashboardProps) {
       }
 
       fetchedCases.forEach(c => {
-        if (c.createdAt) {
-          const date = new Date(c.createdAt);
-          const monthIndex = date.getMonth();
-          const chartItem = last6Months.find(item => item.monthIndex === monthIndex);
-          if (chartItem) chartItem.cases++;
+        const dateVal = c.createdAt;
+        if (dateVal) {
+          let date;
+          if (typeof dateVal === 'string') {
+            date = new Date(dateVal);
+          } else if (dateVal && typeof (dateVal as any).toDate === 'function') {
+            date = (dateVal as any).toDate();
+          }
+
+          if (date && !isNaN(date.getTime())) {
+            const monthIndex = date.getMonth();
+            const chartItem = last6Months.find(item => item.monthIndex === monthIndex);
+            if (chartItem) chartItem.cases++;
+          }
         }
       });
       setChartData(last6Months.map(({ name, cases }) => ({ name, cases })));
@@ -187,17 +203,17 @@ export default function Dashboard({ user }: DashboardProps) {
       setUpcomingSessions(sessions);
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'sessions'));
 
-    // Anti-Omission
-    const omittedUnsub = onSnapshot(collection(db, 'sessions'), (snapshot) => {
-      const sessions = snapshot.docs.map(doc => {
-        const data = doc.data();
-        if (!data.date) console.warn('Dashboard: Session missing date for anti-omission:', doc.id);
-        return { id: doc.id, ...data } as Session;
-      });
-      setAllSessions(sessions);
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'sessions');
-    });
+    // Anti-Omission: Sessions
+    const sessionsUnsubAll = onSnapshot(collection(db, 'sessions'), (snapshot) => {
+      const sess = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Session));
+      setAllSessions(sess);
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'sessions'));
+
+    // Anti-Omission: Expert Sessions
+    const expertSessUnsubAll = onSnapshot(collection(db, 'expertSessions'), (snapshot) => {
+      const sess = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExpertSession));
+      setAllExpertSessions(sess);
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'expertSessions'));
 
     // Pending Consultations
     const consultUnsub = onSnapshot(
@@ -219,35 +235,50 @@ export default function Dashboard({ user }: DashboardProps) {
       judgmentsUnsub();
       notificationsUnsub();
       sessionsUnsub();
-      omittedUnsub();
+      sessionsUnsubAll();
+      expertSessUnsubAll();
       consultUnsub();
     };
   }, [user.uid, user.role]);
 
   useEffect(() => {
-    if (cases.length === 0 || allSessions.length === 0) {
+    if (cases.length === 0) {
       setOmittedSessions([]);
       return;
     }
+
     const today = new Date().toISOString().split('T')[0];
-    const omitted = allSessions.filter(s => {
+    
+    // Check regular sessions
+    const omittedRegular = allSessions.filter(s => {
       const caseItem = cases.find(c => c.id === s.caseId);
       const sDateStr = s.date?.split('T')[0];
       if (!sDateStr) return false;
-      
-      const isOmitted = sDateStr < today && (!s.decision || s.decision === '') && caseItem?.status === 'active';
-      if (isOmitted) {
-        console.log('Dashboard: Omitted session found:', {
-          sessionId: s.id,
-          date: s.date,
-          caseId: s.caseId,
-          caseStatus: caseItem?.status
-        });
-      }
-      return isOmitted;
+      return sDateStr < today && (!s.decision || s.decision === '') && caseItem?.status === 'active';
     });
-    setOmittedSessions(omitted.slice(0, 10));
-  }, [cases, allSessions]);
+
+    // Check expert sessions
+    const omittedExpert = allExpertSessions.filter(s => {
+      const caseItem = cases.find(c => c.id === s.caseId);
+      const sDateStr = s.date?.split('T')[0];
+      if (!sDateStr) return false;
+      // Expert sessions often use 'status' instead of decision string
+      const hasDecision = s.decision && s.decision !== '';
+      const isPending = s.status === 'pending';
+      return sDateStr < today && !hasDecision && isPending && caseItem?.status === 'active';
+    });
+
+    const combinedOmitted = [...omittedRegular, ...omittedExpert];
+    setOmittedSessions(combinedOmitted.slice(0, 10));
+
+    if (combinedOmitted.length > 0) {
+      console.log('Dashboard: Omission detection summary:', {
+        regular: omittedRegular.length,
+        expert: omittedExpert.length,
+        total: combinedOmitted.length
+      });
+    }
+  }, [cases, allSessions, allExpertSessions]);
 
   if (user.role === 'client') {
     return <ClientPortal user={user} />;

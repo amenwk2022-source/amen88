@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { signOut } from 'firebase/auth';
-import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, limit, doc, getDoc } from 'firebase/firestore';
 import {
   Calendar,
   Gavel,
@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import { UserProfile, AppNotification, Case } from '../types';
+import { UserProfile, AppNotification, Case, SystemSettings } from '../types';
 
 import NotificationCenter, { generateNotifications } from './NotificationCenter';
 import toast from 'react-hot-toast';
@@ -62,6 +62,7 @@ export default function Layout({ children, user }: LayoutProps) {
   const [allCases, setAllCases] = useState<Case[]>([]);
   const [allClients, setAllClients] = useState<any[]>([]);
   const [allTasks, setAllTasks] = useState<any[]>([]);
+  const [systemSettings, setSystemSettings] = useState<SystemSettings | null>(null);
   const [searchResults, setSearchResults] = useState<{ type: 'case' | 'client' | 'task'; id: string; title: string; subtitle: string; extra?: string }[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const location = useLocation();
@@ -135,11 +136,19 @@ export default function Layout({ children, user }: LayoutProps) {
       setAllTasks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'tasks'));
 
+    // Load System Settings
+    const unsubSettings = onSnapshot(doc(db, 'settings', 'global'), (snapshot) => {
+      if (snapshot.exists()) {
+        setSystemSettings(snapshot.data() as SystemSettings);
+      }
+    });
+
     return () => {
       unsubNotifs();
       unsubCases();
       unsubClients();
       unsubTasks();
+      unsubSettings();
       clearInterval(interval);
     };
   }, [user]);
@@ -194,7 +203,7 @@ export default function Layout({ children, user }: LayoutProps) {
           </div>
           <div className="flex flex-col">
             <span className="text-xl font-black text-slate-900 tracking-tight leading-none">الأمين</span>
-            <span className="text-[10px] font-bold text-slate-500 mt-1">مكتب المحامي محمد امين علي الصايغ</span>
+            <span className="text-[10px] font-bold text-slate-500 mt-1">{systemSettings?.officeName || 'مكتب المحامي محمد امين علي الصايغ'}</span>
           </div>
         </div>
 
@@ -264,7 +273,7 @@ export default function Layout({ children, user }: LayoutProps) {
                   </div>
                   <div className="flex flex-col">
                     <span className="text-lg font-black text-slate-900">الأمين</span>
-                    <span className="text-[8px] font-bold text-slate-500">مكتب المحامي محمد امين علي الصايغ</span>
+                    <span className="text-[8px] font-bold text-slate-500">{systemSettings?.officeName || 'مكتب المحامي محمد امين علي الصايغ'}</span>
                   </div>
                 </div>
                 <button onClick={() => setSidebarOpen(false)} className="p-2 hover:bg-slate-100 rounded-lg">

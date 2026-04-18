@@ -202,11 +202,11 @@ export default function Judgments({ user }: JudgmentsProps) {
                     <Gavel className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-black text-slate-900">
+                    <h3 className="text-xl font-black text-slate-900">
                       {judgment.type === 'initial' ? 'حكم أول درجة' : judgment.type === 'appeal' ? 'حكم الاستئناف' : 'حكم التمييز'}
                     </h3>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                      قضية: {caseInfo?.caseNumber || '---'}
+                    <p className="text-sm text-slate-500 font-bold uppercase tracking-widest mt-1">
+                      قضية: <span className="text-indigo-600 font-black">{caseInfo?.caseNumber || '---'}</span>
                     </p>
                   </div>
                 </div>
@@ -235,8 +235,8 @@ export default function Judgments({ user }: JudgmentsProps) {
                 )}
               </div>
 
-              <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 mb-4">
-                <p className="text-sm font-bold text-slate-700 leading-relaxed">{judgment.result}</p>
+              <div className="p-5 bg-slate-50 rounded-xl border border-slate-100 mb-4">
+                <p className="text-base font-bold text-slate-800 leading-relaxed">{judgment.result}</p>
               </div>
 
               <div className="space-y-3">

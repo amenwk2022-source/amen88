@@ -260,6 +260,19 @@ export default function SessionRelay({ user }: SessionRelayProps) {
         useCORS: true,
         backgroundColor: '#ffffff',
         onclone: (clonedDoc) => {
+          // Add a style tag to fix Arabic character fragmentation
+          const style = clonedDoc.createElement('style');
+          style.innerHTML = `
+            * {
+              letter-spacing: normal !important;
+              letter-spacing: 0 !important;
+              text-rendering: auto !important;
+              -webkit-font-feature-settings: "kern" 1, "liga" 1, "clig" 1, "calt" 1 !important;
+              font-feature-settings: "kern" 1, "liga" 1, "clig" 1, "calt" 1 !important;
+            }
+          `;
+          clonedDoc.head.appendChild(style);
+
           // Robust fix for oklch error: Remove all stylesheets that might contain oklch
           // and replace with a simple style for the export area
           const styleSheets = Array.from(clonedDoc.styleSheets);
@@ -308,6 +321,19 @@ export default function SessionRelay({ user }: SessionRelayProps) {
         useCORS: true,
         backgroundColor: '#ffffff',
         onclone: (clonedDoc) => {
+          // Add a style tag to fix Arabic character fragmentation
+          const style = clonedDoc.createElement('style');
+          style.innerHTML = `
+            * {
+              letter-spacing: normal !important;
+              letter-spacing: 0 !important;
+              text-rendering: auto !important;
+              -webkit-font-feature-settings: "kern" 1, "liga" 1, "clig" 1, "calt" 1 !important;
+              font-feature-settings: "kern" 1, "liga" 1, "clig" 1, "calt" 1 !important;
+            }
+          `;
+          clonedDoc.head.appendChild(style);
+
           // Robust fix for oklch error: Remove all stylesheets that might contain oklch
           const styleSheets = Array.from(clonedDoc.styleSheets);
           for (const sheet of styleSheets) {
@@ -376,11 +402,25 @@ export default function SessionRelay({ user }: SessionRelayProps) {
     if (activeTab === 'today') return sDate === todayStr && courtMatch;
     if (activeTab === 'upcoming') return sDate > todayStr && courtMatch;
     if (activeTab === 'omitted') {
-      return sDate < realTodayStr && !s.decision && s.caseInfo?.status === 'active' && courtMatch;
+      const isOmittedRegular = sDate < realTodayStr && !s.decision && s.caseInfo?.status === 'active' && courtMatch;
+      return isOmittedRegular;
     }
     if (activeTab === 'search') return sDate === selectedDate && courtMatch;
     return courtMatch;
   });
+
+  const omittedExpertSessions = expertSessions
+    .map(s => ({
+      ...s,
+      caseInfo: cases.find(c => c.id === s.caseId)
+    }))
+    .filter(s => {
+      if (!s.date || !s.caseInfo) return false;
+      const sDate = s.date.split('T')[0];
+      const courtMatch = selectedCourt === 'ALL' || s.caseInfo?.court === selectedCourt;
+      const isOmittedExpert = sDate < realTodayStr && s.status === 'pending' && (!s.decision || s.decision === '') && s.caseInfo?.status === 'active' && courtMatch;
+      return isOmittedExpert;
+    });
 
   const courts = ['ALL', ...new Set(cases.map(c => c.court).filter(Boolean))];
 
@@ -415,12 +455,23 @@ export default function SessionRelay({ user }: SessionRelayProps) {
     omitted: allSessionsWithCase.filter(s => {
       if (!s.date) return false;
       return s.date.split('T')[0] < realTodayStr && !s.decision && s.caseInfo?.status === 'active';
+    }).length + expertSessions.filter(s => {
+      if (!s.date) return false;
+      const caseItem = cases.find(c => c.id === s.caseId);
+      return s.date.split('T')[0] < realTodayStr && s.status === 'pending' && (!s.decision || s.decision === '') && caseItem?.status === 'active';
     }).length,
   };
 
-  const formatDate = (date: Date) => {
-    return format(date, 'EEEE, dd MMMM yyyy', { locale: arSA });
-  };
+    const safeFormat = (dateStr: string | undefined, formatStr: string) => {
+      if (!dateStr) return '---';
+      try {
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return '---';
+        return format(d, formatStr, { locale: arSA });
+      } catch (e) {
+        return '---';
+      }
+    };
 
   return (
     <div className="space-y-6 rtl pb-20" dir="rtl">
@@ -643,7 +694,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
             <div className="grid grid-cols-3 gap-6 mt-10">
               <div className="bg-slate-50 p-6 rounded-2xl border-2 border-slate-100 text-center">
                 <p className="text-xs font-black text-slate-400 uppercase mb-2">تاريخ الرول</p>
-                <p className="text-xl font-black text-slate-900">{formatDate(displayDate)}</p>
+                <p className="text-xl font-black text-slate-900">{safeFormat(displayDate.toISOString(), 'EEEE, dd MMMM yyyy')}</p>
               </div>
               <div className="bg-slate-50 p-6 rounded-2xl border-2 border-slate-100 text-center">
                 <p className="text-xs font-black text-slate-400 uppercase mb-2">إجمالي الجلسات</p>
@@ -662,10 +713,12 @@ export default function SessionRelay({ user }: SessionRelayProps) {
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 print:bg-slate-900 print:text-white">
                 <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 w-12 text-center print:text-white print:border-slate-700 print:text-sm">#</th>
-                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-white print:border-slate-700 print:text-sm">المحكمة / الدائرة</th>
+                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-white print:border-slate-700 print:text-sm">المحكمة</th>
+                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-white print:border-slate-700 print:text-sm">الدائرة</th>
                 <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-white print:border-slate-700 print:text-sm">رقم القضية</th>
                 <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-white print:border-slate-700 print:text-sm">الموكل</th>
                 <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-white print:border-slate-700 print:text-sm">الخصم</th>
+                {activeTab === 'omitted' && <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-white print:border-slate-700 print:text-sm">تاريخ الجلسة الأصلية</th>}
                 <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest print:text-white print:text-sm">القرار / الإجراء</th>
               </tr>
             </thead>
@@ -684,14 +737,14 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                       {index + 1}
                     </td>
                     <td className="p-4 border-l border-slate-100 print:border-slate-200">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-100 print:bg-transparent print:border-none print:text-slate-900 print:text-base print:font-black">
-                          {session.caseInfo?.court || '---'}
-                        </span>
-                        <span className="text-[10px] font-black text-slate-400 mt-1 print:text-slate-500 print:text-xs">
-                          {session.caseInfo?.circuit || '---'}
-                        </span>
-                      </div>
+                      <span className="text-sm font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-100 print:bg-transparent print:border-none print:text-slate-900 print:text-base print:font-black whitespace-nowrap">
+                        {session.caseInfo?.court || '---'}
+                      </span>
+                    </td>
+                    <td className="p-4 border-l border-slate-100 print:border-slate-200">
+                      <span className="text-[10px] font-black text-slate-400 print:text-slate-500 print:text-sm shrink-0 whitespace-nowrap">
+                        {session.caseInfo?.circuit || '---'}
+                      </span>
                     </td>
                     <td className="p-4 border-l border-slate-100 print:border-slate-200">
                       <span className="text-sm font-black text-slate-900 print:text-base">
@@ -715,6 +768,11 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                     <td className="p-4 border-l border-slate-100 print:border-slate-200">
                       <span className="text-sm font-bold text-slate-700 print:text-slate-900 print:text-base">{session.caseInfo?.opponent || '---'}</span>
                     </td>
+                    {activeTab === 'omitted' && (
+                      <td className="p-4 border-l border-slate-100 print:border-slate-200">
+                        <span className="text-sm font-black text-red-600">---</span>
+                      </td>
+                    )}
                     <td className="p-4 print:text-base">
                       <div className="flex flex-col gap-2">
                         {session.decision ? (
@@ -725,16 +783,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                               <p className="text-sm font-bold text-emerald-900 print:text-slate-900 leading-relaxed print:text-base print:font-bold">{session.decision}</p>
                               {session.nextDate && (
                                 <p className="text-[10px] text-emerald-600 font-black mt-1 print:text-slate-600 print:text-sm">
-                                  الجلسة القادمة: {(() => {
-                                    try {
-                                      const d = new Date(session.nextDate);
-                                      if (isNaN(d.getTime())) throw new Error('Invalid date');
-                                      return format(d, 'yyyy/MM/dd');
-                                    } catch (e) {
-                                      console.error('SessionRelay: Error formatting nextDate:', session.nextDate, e);
-                                      return '---';
-                                    }
-                                  })()}
+                                  الجلسة القادمة: {safeFormat(session.nextDate, 'yyyy/MM/dd')}
                                 </p>
                               )}
                             </div>
@@ -821,7 +870,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
               ) : (
                 filteredExpertSessions.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="p-20 text-center text-slate-400 font-bold">
+                    <td colSpan={8} className="p-20 text-center text-slate-400 font-bold">
                       لا توجد جلسات مسجلة لهذا التاريخ
                     </td>
                   </tr>
@@ -829,39 +878,41 @@ export default function SessionRelay({ user }: SessionRelayProps) {
               )}
 
               {/* Expert Sessions Section */}
-              {filteredExpertSessions.length > 0 && (
+              {(filteredExpertSessions.length > 0 || (activeTab === 'omitted' && omittedExpertSessions.length > 0)) && (
                 <>
                   <tr className="hidden print:table-row">
-                    <td colSpan={6} className="p-0">
+                    <td colSpan={activeTab === 'omitted' ? 8 : 7} className="p-0">
                       <div className="bg-slate-900 text-white p-6 text-center font-black text-2xl tracking-widest uppercase mt-12">
-                        رول جلسات الخبراء
+                        {activeTab === 'omitted' ? 'جلسات الخبراء المنسية' : 'رول جلسات الخبراء'}
                       </div>
                     </td>
                   </tr>
                   
                   <tr className="bg-slate-50 border-b border-slate-200 print:bg-slate-100 print:border-b-2 print:border-slate-900">
                     <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 w-12 text-center print:text-slate-900 print:border-slate-900 print:text-sm">#</th>
-                    <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900 print:text-sm">الخبير / المكان</th>
+                    <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900 print:text-sm">الخبير</th>
+                    <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900 print:text-sm">المكان</th>
                     <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900 print:text-sm">رقم القضية</th>
                     <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900 print:text-sm">الموكل</th>
                     <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900 print:text-sm">الخصم</th>
+                    {activeTab === 'omitted' && <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-slate-900 print:border-slate-900 print:text-sm">تاريخ الجلسة</th>}
                     <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest print:text-slate-900 print:text-sm">ملاحظات الخبير</th>
                   </tr>
 
-                  {filteredExpertSessions.map((session, index) => (
-                    <tr key={session.id} className="transition-all hover:bg-slate-50 print:hover:bg-transparent">
+                  {(activeTab === 'omitted' ? omittedExpertSessions : filteredExpertSessions).map((session, index) => (
+                    <tr key={session.id} className={cn("transition-all hover:bg-slate-50 print:hover:bg-transparent", activeTab === 'omitted' ? "bg-amber-50/20" : "")}>
                       <td className="p-4 text-sm font-black text-slate-400 text-center border-l border-slate-100 print:text-slate-900 print:border-slate-900">
                         {index + 1}
                       </td>
                       <td className="p-4 border-l border-slate-100 print:border-slate-200">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-100 print:bg-transparent print:border-none print:text-slate-900 print:text-base print:font-black">
-                            {session.expertName}
-                          </span>
-                          <span className="text-[10px] font-black text-slate-400 mt-1 print:text-slate-500 print:text-xs">
-                            {session.officeLocation || '---'} {session.time ? `- الساعة: ${session.time}` : ''}
-                          </span>
-                        </div>
+                        <span className="text-sm font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-100 print:bg-transparent print:border-none print:text-slate-900 print:text-base print:font-black whitespace-nowrap">
+                          {session.expertName}
+                        </span>
+                      </td>
+                      <td className="p-4 border-l border-slate-100 print:border-slate-200">
+                        <span className="text-[10px] font-black text-slate-400 print:text-slate-500 print:text-sm shrink-0 whitespace-nowrap">
+                          {session.officeLocation || '---'} {session.time ? `- الساعة: ${session.time}` : ''}
+                        </span>
                       </td>
                       <td className="p-4 border-l border-slate-100 print:border-slate-200">
                         <span className="text-sm font-black text-slate-900 print:text-base">
@@ -883,8 +934,24 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                       <td className="p-4 border-l border-slate-100 print:border-slate-200">
                         <span className="text-sm font-bold text-slate-700 print:text-slate-900 print:text-base">{session.caseInfo?.opponent || '---'}</span>
                       </td>
+                      {activeTab === 'omitted' && (
+                        <td className="p-4 border-l border-slate-100 print:border-slate-200">
+                          <span className="text-sm font-black text-red-600">{safeFormat(session.date, 'yyyy/MM/dd')}</span>
+                        </td>
+                      )}
                       <td className="p-4 print:text-base">
-                        <div className="hidden print:block h-12 border-b-2 border-dashed border-slate-200 w-full"></div>
+                        <div className="flex flex-col gap-2">
+                          {activeTab === 'omitted' ? (
+                            <button 
+                              onClick={() => navigate(`/expert-sessions?id=${session.id}`)}
+                              className="text-xs font-black text-indigo-600 hover:underline bg-white px-3 py-1 rounded-lg border border-slate-200 shadow-sm w-fit"
+                            >
+                              إثبات قرار الخبير
+                            </button>
+                          ) : (
+                            <div className="hidden print:block h-12 border-b-2 border-dashed border-slate-200 w-full"></div>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -910,7 +977,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
             <p className="text-xs text-slate-400 font-bold">
               هذا التقرير تم إنشاؤه آلياً بواسطة نظام Loyer OS لإدارة المكاتب القانونية.
               <br />
-              جميع الحقوق محفوظة © {new Date().getFullYear()} مكتب المحامي محمد امين علي الصايغ.
+              جميع الحقوق محفوظة © {new Date().getFullYear()} {systemSettings?.officeName || 'مكتب المحامي محمد امين علي الصايغ'}.
             </p>
           </div>
         </div>
@@ -919,117 +986,301 @@ export default function SessionRelay({ user }: SessionRelayProps) {
       {/* Hidden Exportable Area - Completely free of Tailwind classes to avoid oklch error */}
       <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
         <div id="export-area" ref={exportRef} style={{ 
-          width: '1000px', 
+          width: '1200px', 
           backgroundColor: '#ffffff', 
-          padding: '60px', 
+          padding: '100px 80px', 
           direction: 'rtl',
-          fontFamily: 'Arial, sans-serif'
+          fontFamily: '"Amiri", "Traditional Arabic", "Arial", sans-serif',
+          color: '#0f172a',
+          position: 'relative'
         }}>
+          {/* Decorative Classic Border */}
+          <div style={{
+            position: 'absolute',
+            top: '40px',
+            bottom: '40px',
+            left: '40px',
+            right: '40px',
+            border: '4px double #1e293b',
+            pointerEvents: 'none',
+            opacity: 0.15
+          }}></div>
+
           <div style={{ 
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'flex-start',
-            borderBottom: '3px solid #000000', 
+            borderBottom: '2px solid #0f172a', 
             paddingBottom: '30px',
-            marginBottom: '40px'
+            marginBottom: '40px',
+            position: 'relative'
           }}>
-            <div style={{ textAlign: 'right' }}>
-              <h2 style={{ fontSize: '32px', fontWeight: '900', color: '#000000', margin: '0 0 5px 0' }}>
-                مكتب المحامي محمد امين علي الصايغ
+            <div style={{ textAlign: 'right', flex: 1 }}>
+              <h2 style={{ fontSize: '38px', fontWeight: '900', color: '#0f172a', margin: '0 0 10px 0', lineHeight: '1.2' }}>
+                {systemSettings?.officeName || 'مكتب المحامي محمد امين علي الصايغ'}
               </h2>
-              <p style={{ fontSize: '18px', fontWeight: '700', color: '#666666', margin: '0' }}>
-                للمحاماة والاستشارات القانونية
+              <p style={{ fontSize: '22px', fontWeight: '700', color: '#475569', margin: '0 0 20px 0' }}>
+                {systemSettings?.officeDescription || 'للمحاماة والاستشارات القانونية والتحكيم'}
               </p>
-              <p style={{ fontSize: '12px', color: '#999999', margin: '5px 0 0 0' }}>
-                دولة الكويت - برج التجارية - الدور 25
-              </p>
+              <div style={{ fontSize: '15px', color: '#64748b', lineHeight: '1.8', fontWeight: '600' }}>
+                <p style={{ margin: '0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ color: '#0f172a' }}>العنوان:</span> {systemSettings?.officeAddress || 'دولة الكويت - مدينة الكويت - المرقاب'}
+                </p>
+                <p style={{ margin: '0', display: 'flex', alignItems: 'center', gap: '15px' }}>
+                  <span><span style={{ color: '#0f172a' }}>هاتف:</span> {systemSettings?.officePhone || '22200000'}</span>
+                  {systemSettings?.officeFax && <span><span style={{ color: '#0f172a' }}>فاكس:</span> {systemSettings.officeFax}</span>}
+                </p>
+              </div>
             </div>
-            <div style={{ textAlign: 'left' }}>
-              <p style={{ fontSize: '16px', fontWeight: 'bold', color: '#000000', margin: '0 0 5px 0' }}>
-                التاريخ: {new Date().toLocaleDateString('ar-EG')}
-              </p>
-              <p style={{ fontSize: '16px', fontWeight: 'bold', color: '#000000', margin: '0' }}>
-                يوم: {format(displayDate, 'EEEE', { locale: arSA })}
-              </p>
+
+            <div style={{ textAlign: 'center', flex: 0.5, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <div style={{ 
+                width: '100px', 
+                height: '100px', 
+                backgroundColor: '#ffffff', 
+                border: '3px solid #0f172a',
+                borderRadius: '30px', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                marginBottom: '15px',
+                boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)'
+              }}>
+                <Scale style={{ width: '50px', height: '50px', color: '#0f172a' }} />
+              </div>
+              <div style={{ fontSize: '12px', fontWeight: '800', color: '#94a3b8', letterSpacing: '2px' }}>
+                LOVER OS LEGAL
+              </div>
+            </div>
+
+            <div style={{ textAlign: 'left', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+              <div style={{ backgroundColor: '#f8fafc', padding: '20px', borderRadius: '15px', border: '1px solid #e2e8f0' }}>
+                <table style={{ borderCollapse: 'collapse', border: 'none' }}>
+                  <tbody>
+                    <tr>
+                      <td style={{ fontWeight: '900', color: '#64748b', fontSize: '16px', padding: '4px 0', textAlign: 'right' }}>تاريخ التقرير:</td>
+                      <td style={{ fontWeight: '900', color: '#0f172a', fontSize: '18px', padding: '4px 15px 4px 0', textAlign: 'left' }}>{format(displayDate, 'yyyy/MM/dd')}</td>
+                    </tr>
+                    <tr>
+                      <td style={{ fontWeight: '900', color: '#64748b', fontSize: '16px', padding: '4px 0', textAlign: 'right' }}>اليوم:</td>
+                      <td style={{ fontWeight: '900', color: '#0f172a', fontSize: '18px', padding: '4px 15px 4px 0', textAlign: 'left' }}>{format(displayDate, 'EEEE', { locale: arSA })}</td>
+                    </tr>
+                    <tr>
+                      <td style={{ fontWeight: '900', color: '#64748b', fontSize: '16px', padding: '4px 0', textAlign: 'right' }}>رقم الرول:</td>
+                      <td style={{ fontWeight: '900', color: '#0f172a', fontSize: '18px', padding: '4px 15px 4px 0', textAlign: 'left' }}>#{format(displayDate, 'yyyyMMdd')}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
-          <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+          <div style={{ textAlign: 'center', marginBottom: '60px' }}>
             <h1 style={{ 
-              fontSize: '36px', 
-              fontWeight: '900', 
-              color: '#000000', 
+              fontSize: '56px', 
+              fontWeight: '950', 
+              color: '#0f172a', 
               margin: '0',
-              display: 'inline-block',
-              padding: '15px 40px',
-              border: '3px solid #000000',
-              borderRadius: '15px',
-              backgroundColor: '#f8f9fa'
+              textDecoration: 'underline',
+              textDecorationThickness: '6px',
+              textUnderlineOffset: '12px'
             }}>
-              رول جلسات: {formatDate(displayDate)}
+              رول الجلسات اليومي لليوم {format(displayDate, 'EEEE', { locale: arSA })} الموافق {format(displayDate, 'yyyy/MM/dd')}
             </h1>
-            {selectedCourt !== 'ALL' && (
-              <p style={{ fontSize: '20px', fontWeight: '900', color: '#4f46e5', marginTop: '15px' }}>
-                المحكمة: {selectedCourt}
-              </p>
-            )}
+            <p style={{ fontSize: '24px', fontWeight: '800', color: '#4f46e5', marginTop: '25px', opacity: 0.8 }}>
+              كشف تفصيلي بجلسات القضايا المنظورة أمام المحاكم
+            </p>
           </div>
 
+          {/* Sub Header for Court if filtered */}
+          {selectedCourt !== 'ALL' && (
+            <div style={{ 
+              backgroundColor: '#0f172a', 
+              color: '#ffffff', 
+              padding: '12px 30px', 
+              borderRadius: '10px', 
+              display: 'inline-block',
+              marginBottom: '30px',
+              fontSize: '18px',
+              fontWeight: '900'
+            }}>
+              محكمة: {selectedCourt}
+            </div>
+          )}
+
+          {/* Sessions Table */}
           <table style={{ 
             width: '100%', 
-            borderCollapse: 'collapse', 
-            border: '2px solid #000000',
-            textAlign: 'right'
+            borderCollapse: 'separate', 
+            borderSpacing: '0',
+            textAlign: 'right',
+            marginBottom: '50px',
+            border: '2px solid #0f172a',
+            borderRadius: '16px',
+            overflow: 'hidden'
           }}>
             <thead>
-              <tr style={{ backgroundColor: '#f0f0f0' }}>
-                <th style={{ padding: '15px', border: '1px solid #000000', fontSize: '16px', fontWeight: '900', width: '40px', textAlign: 'center' }}>#</th>
-                <th style={{ padding: '15px', border: '1px solid #000000', fontSize: '16px', fontWeight: '900' }}>المحكمة</th>
-                <th style={{ padding: '15px', border: '1px solid #000000', fontSize: '16px', fontWeight: '900' }}>الدائرة</th>
-                <th style={{ padding: '15px', border: '1px solid #000000', fontSize: '16px', fontWeight: '900' }}>رقم القضية</th>
-                <th style={{ padding: '15px', border: '1px solid #000000', fontSize: '16px', fontWeight: '900' }}>الموكل</th>
-                <th style={{ padding: '15px', border: '1px solid #000000', fontSize: '16px', fontWeight: '900' }}>الخصم</th>
-                <th style={{ padding: '15px', border: '1px solid #000000', fontSize: '16px', fontWeight: '900' }}>القرار</th>
+              <tr style={{ backgroundColor: '#0f172a' }}>
+                <th style={{ padding: '25px 15px', color: '#ffffff', fontSize: '18px', fontWeight: '900', width: '60px', textAlign: 'center' }}>م</th>
+                <th style={{ padding: '25px 15px', color: '#ffffff', fontSize: '18px', fontWeight: '900', width: '180px' }}>المحكمة</th>
+                <th style={{ padding: '25px 15px', color: '#ffffff', fontSize: '18px', fontWeight: '900', width: '120px' }}>الدائرة</th>
+                <th style={{ padding: '25px 15px', color: '#ffffff', fontSize: '18px', fontWeight: '900', width: '150px' }}>رقم القضية</th>
+                <th style={{ padding: '25px 15px', color: '#ffffff', fontSize: '18px', fontWeight: '900', width: '220px' }}>الموكل</th>
+                <th style={{ padding: '25px 15px', color: '#ffffff', fontSize: '18px', fontWeight: '900', width: '220px' }}>الخصم</th>
+                <th style={{ padding: '25px 15px', color: '#ffffff', fontSize: '18px', fontWeight: '900' }}>القرار المتخذ</th>
               </tr>
             </thead>
             <tbody>
               {filteredSessions.map((session, index) => (
-                <tr key={session.id}>
-                  <td style={{ padding: '15px', border: '1px solid #000000', fontSize: '14px', fontWeight: 'bold', textAlign: 'center' }}>{index + 1}</td>
-                  <td style={{ padding: '15px', border: '1px solid #000000', fontSize: '14px', fontWeight: 'bold' }}>{session.caseInfo?.court || '---'}</td>
-                  <td style={{ padding: '15px', border: '1px solid #000000', fontSize: '14px', fontWeight: 'bold' }}>{session.caseInfo?.circuit || '---'}</td>
-                  <td style={{ padding: '15px', border: '1px solid #000000', fontSize: '14px', fontWeight: '900' }}>{session.caseInfo?.caseNumber || '---'} / {session.caseInfo?.year || '----'}</td>
-                  <td style={{ padding: '15px', border: '1px solid #000000', fontSize: '14px', fontWeight: 'bold' }}>{session.caseInfo?.clientName || '---'}</td>
-                  <td style={{ padding: '15px', border: '1px solid #000000', fontSize: '14px', fontWeight: 'bold' }}>{session.caseInfo?.opponent || '---'}</td>
-                  <td style={{ padding: '15px', border: '1px solid #000000', fontSize: '14px', fontWeight: 'bold', lineHeight: '1.5' }}>
-                    {session.decision || '---'}
-                    {session.nextDate && (
-                      <div style={{ fontSize: '11px', color: '#666666', marginTop: '5px', fontWeight: '900' }}>
-                        الجلسة القادمة: {format(new Date(session.nextDate), 'yyyy/MM/dd')}
+                <tr key={session.id} style={{ backgroundColor: index % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                  <td style={{ padding: '25px 15px', borderBottom: '1px solid #e2e8f0', fontSize: '17px', fontWeight: '900', textAlign: 'center', color: '#94a3b8' }}>{index + 1}</td>
+                  <td style={{ padding: '25px 15px', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: '23px', fontWeight: '900', color: '#4f46e5' }}>{session.caseInfo?.court || '---'}</span>
+                  </td>
+                  <td style={{ padding: '25px 15px', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: '20px', fontWeight: '800', color: '#64748b' }}>{session.caseInfo?.circuit || '---'}</span>
+                  </td>
+                  <td style={{ padding: '25px 15px', borderBottom: '1px solid #e2e8f0', fontSize: '26px', fontWeight: '950', color: '#0f172a' }}>
+                    {session.caseInfo?.caseNumber || '---'} / {session.caseInfo?.year || '----'}
+                  </td>
+                  <td style={{ padding: '25px 15px', borderBottom: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '24px', fontWeight: '900', color: '#0f172a' }}>{session.caseInfo?.clientName || '---'}</div>
+                    {session.caseInfo?.clientPosition && (
+                      <div style={{ fontSize: '16px', fontWeight: '800', color: '#4f46e5', marginTop: '6px' }}>
+                        ({session.caseInfo.clientPosition === 'plaintiff' ? 'مدعي' : 
+                          session.caseInfo.clientPosition === 'defendant' ? 'مدعى عليه' :
+                          session.caseInfo.clientPosition === 'appellant' ? 'مستأنف' : 'مستأنف ضده'})
                       </div>
+                    )}
+                  </td>
+                  <td style={{ padding: '25px 15px', borderBottom: '1px solid #e2e8f0', fontSize: '22px', fontWeight: '800', color: '#475569' }}>{session.caseInfo?.opponent || '---'}</td>
+                  <td style={{ padding: '25px 15px', borderBottom: '1px solid #e2e8f0' }}>
+                    {session.decision ? (
+                      <div style={{ fontSize: '22px', fontWeight: '800', color: '#065f46', lineHeight: '1.6' }}>
+                        {session.decision}
+                        {session.nextDate && (
+                          <div style={{ fontSize: '16px', color: '#4f46e5', marginTop: '10px', fontWeight: '900', backgroundColor: '#eef2ff', display: 'inline-block', padding: '4px 12px', borderRadius: '6px' }}>
+                            الجلسة القادمة: {format(new Date(session.nextDate), 'yyyy/MM/dd')}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div style={{ height: '50px', borderBottom: '1px dashed #cbd5e1', width: '100%' }}></div>
                     )}
                   </td>
                 </tr>
               ))}
+              {filteredSessions.length === 0 && (
+                <tr>
+                  <td colSpan={6} style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '18px', fontWeight: '800' }}>
+                    لا توجد جلسات مسجلة لهذا اليوم
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
+
+          {/* Expert Sessions in Export */}
+          {filteredExpertSessions.length > 0 && (
+            <div style={{ marginTop: '60px', position: 'relative' }}>
+              <div style={{ 
+                backgroundColor: '#0f172a', 
+                color: '#ffffff', 
+                padding: '20px', 
+                textAlign: 'center', 
+                fontSize: '24px', 
+                fontWeight: '950', 
+                borderRadius: '16px 16px 0 0'
+              }}>
+                رول جلسات الخبراء
+              </div>
+              <table style={{ 
+                width: '100%', 
+                borderCollapse: 'separate', 
+                borderSpacing: '0',
+                textAlign: 'right',
+                border: '2px solid #0f172a',
+                borderTop: 'none',
+                borderRadius: '0 0 16px 16px',
+                overflow: 'hidden'
+              }}>
+                <thead>
+                  <tr style={{ backgroundColor: '#0f172a' }}>
+                    <th style={{ padding: '20px 15px', borderBottom: '2px solid #0f172a', fontSize: '17px', fontWeight: '900', width: '60px', textAlign: 'center', color: '#ffffff' }}>م</th>
+                    <th style={{ padding: '25px 15px', color: '#ffffff', fontSize: '18px', fontWeight: '900', width: '150px' }}>الخبير</th>
+                    <th style={{ padding: '25px 15px', color: '#ffffff', fontSize: '18px', fontWeight: '900', width: '130px' }}>المكان</th>
+                    <th style={{ padding: '20px 15px', borderBottom: '2px solid #0f172a', fontSize: '17px', fontWeight: '900', color: '#ffffff' }}>رقم القضية</th>
+                    <th style={{ padding: '20px 15px', borderBottom: '2px solid #0f172a', fontSize: '17px', fontWeight: '900', color: '#ffffff' }}>الموكل</th>
+                    <th style={{ padding: '20px 15px', borderBottom: '2px solid #0f172a', fontSize: '17px', fontWeight: '900', color: '#ffffff' }}>الخصم</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredExpertSessions.map((session, index) => (
+                    <tr key={session.id}>
+                      <td style={{ padding: '20px 15px', borderBottom: '1px solid #f1f5f9', fontSize: '17px', fontWeight: '900', textAlign: 'center', color: '#94a3b8' }}>{index + 1}</td>
+                      <td style={{ padding: '20px 15px', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: '23px', fontWeight: '950', color: '#059669' }}>{session.expertName}</span>
+                      </td>
+                      <td style={{ padding: '20px 15px', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: '20px', fontWeight: '800', color: '#94a3b8' }}>{session.officeLocation || '---'}</span>
+                      </td>
+                      <td style={{ padding: '20px 15px', borderBottom: '1px solid #f1f5f9', fontSize: '26px', fontWeight: '950' }}>{session.caseInfo?.caseNumber || '---'}</td>
+                      <td style={{ padding: '20px 15px', borderBottom: '1px solid #f1f5f9', fontSize: '24px', fontWeight: '900' }}>{session.caseInfo?.clientName || '---'}</td>
+                      <td style={{ padding: '20px 15px', borderBottom: '1px solid #f1f5f9', fontSize: '22px', fontWeight: '800' }}>{session.caseInfo?.opponent || '---'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           
+          {/* Professional Footer Signatures */}
           <div style={{ 
-            marginTop: '80px', 
+            marginTop: '120px', 
             display: 'flex', 
             justifyContent: 'space-between',
-            fontSize: '18px',
-            fontWeight: '900',
-            color: '#000000'
+            alignItems: 'flex-start'
           }}>
-            <div style={{ textAlign: 'center', width: '250px' }}>
-              <p style={{ marginBottom: '60px' }}>توقيع المحامي الحاضر</p>
-              <div style={{ borderBottom: '2px solid #000000' }}></div>
+            <div style={{ textAlign: 'center', width: '350px' }}>
+              <p style={{ fontSize: '20px', fontWeight: '950', color: '#0f172a', marginBottom: '80px' }}>توقيع المحامي الحاضر</p>
+              <div style={{ borderBottom: '3px solid #0f172a', width: '250px', margin: '0 auto' }}></div>
+              <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '10px' }}>Signature of attending lawyer</p>
             </div>
-            <div style={{ textAlign: 'center', width: '250px' }}>
-              <p style={{ marginBottom: '60px' }}>ختم واعتماد المكتب</p>
-              <div style={{ borderBottom: '2px solid #000000' }}></div>
+            
+            <div style={{ textAlign: 'center', width: '350px', position: 'relative' }}>
+              {/* Decorative Stamp Area */}
+              <div style={{
+                position: 'absolute',
+                top: '60px',
+                left: '50%',
+                transform: 'translateX(-50%) rotate(-15deg)',
+                width: '180px',
+                height: '180px',
+                border: '6px double rgba(15, 23, 42, 0.05)',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 0
+              }}>
+                <div style={{ fontSize: '10px', fontWeight: '900', color: 'rgba(15, 23, 42, 0.05)', textAlign: 'center' }}>
+                  ختم المكتب الرسمي<br />AUTHENTIFIED STAMP
+                </div>
+              </div>
+              
+              <p style={{ fontSize: '20px', fontWeight: '950', color: '#0f172a', marginBottom: '80px', position: 'relative', zIndex: 1 }}>ختم واعتماد المكتب</p>
+              <div style={{ borderBottom: '3px solid #0f172a', width: '250px', margin: '0 auto', position: 'relative', zIndex: 1 }}></div>
+              <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '10px', position: 'relative', zIndex: 1 }}>Official Office Stamp</p>
             </div>
+          </div>
+
+          <div style={{ marginTop: '150px', textAlign: 'center', borderTop: '2px solid #f1f5f9', paddingTop: '30px' }}>
+            <p style={{ fontSize: '12px', color: '#64748b', fontWeight: '800', margin: '0' }}>
+              صدر هذا المستند من خلال المنظومة القانونية المتكاملة Loyer OS لإدارة المكاتب
+            </p>
+            <p style={{ fontSize: '12px', color: '#94a3b8', fontWeight: '900', margin: '8px 0 0 0', textTransform: 'uppercase' }}>
+              All Rights Reserved © {new Date().getFullYear()} {systemSettings?.officeName || 'Lawyer Office Management System'}
+            </p>
           </div>
         </div>
       </div>
@@ -1306,7 +1557,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                       <div className="absolute top-0 -right-[9px] w-4 h-4 rounded-full bg-white border-4 border-indigo-600" />
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-sm font-black text-indigo-600">
-                          {format(new Date(s.date), 'dd MMMM yyyy', { locale: arSA })}
+                          {safeFormat(s.date, 'dd MMMM yyyy')}
                         </span>
                         {s.decision ? (
                           <span className="bg-emerald-100 text-emerald-700 text-[10px] font-black px-2 py-1 rounded-lg">
@@ -1333,7 +1584,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                         </p>
                         {s.nextDate && (
                           <p className="text-xs text-slate-400 font-bold mt-2">
-                            الجلسة القادمة: {format(new Date(s.nextDate), 'yyyy/MM/dd')}
+                            الجلسة القادمة: {safeFormat(s.nextDate, 'yyyy/MM/dd')}
                           </p>
                         )}
                       </div>
