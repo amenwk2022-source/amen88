@@ -58,6 +58,27 @@ export default function CaseManagement({ user }: CaseManagementProps) {
   const [caseNotes, setCaseNotes] = useState<{ id: string; text: string; date: string; author: string }[]>([]);
   const [caseTasks, setCaseTasks] = useState<any[]>([]);
   const [systemSettings, setSystemSettings] = useState<SystemSettings | null>(null);
+  const [judgmentData, setJudgmentData] = useState<Partial<Judgment>>({
+    date: new Date().toISOString().split('T')[0],
+    type: 'initial',
+    result: '',
+    notes: '',
+    appealDeadline: '',
+    appealStatus: 'pending',
+    isAppealed: false
+  });
+  const [formData, setFormData] = useState<Partial<Case>>({
+    clientId: '',
+    caseNumber: '',
+    year: '',
+    court: '',
+    circuit: '',
+    autoNumber: '',
+    opponent: '',
+    caseType: '',
+    status: 'pre-filing',
+    clientPosition: 'plaintiff'
+  });
   const [isExpertHistoryOpen, setIsExpertHistoryOpen] = useState(false);
   const [newNote, setNewNote] = useState('');
   const [sessionDate, setSessionDate] = useState('');
@@ -164,27 +185,6 @@ export default function CaseManagement({ user }: CaseManagementProps) {
     }
   }, [selectedCaseDetails]);
 
-  const [judgmentData, setJudgmentData] = useState<Partial<Judgment>>({
-    date: new Date().toISOString().split('T')[0],
-    type: 'initial',
-    result: '',
-    notes: '',
-    appealDeadline: '',
-    appealStatus: 'pending',
-    isAppealed: false
-  });
-  const [formData, setFormData] = useState<Partial<Case>>({
-    clientId: '',
-    caseNumber: '',
-    year: '',
-    court: '',
-    circuit: '',
-    autoNumber: '',
-    opponent: '',
-    caseType: '',
-    status: 'pre-filing',
-    clientPosition: 'plaintiff'
-  });
 
   useEffect(() => {
     let q = query(collection(db, 'cases'), orderBy('createdAt', 'desc'));
