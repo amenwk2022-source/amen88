@@ -255,7 +255,8 @@ export default function Settings({ user }: SettingsProps) {
       const collections = [
         'users', 'cases', 'clients', 'finance', 'sessions', 
         'expertSessions', 'judgments', 'tasks', 'consultations', 
-        'documents', 'caseNotes', 'notificationSettings', 'settings'
+        'documents', 'caseNotes', 'notificationSettings', 'settings',
+        'procedures', 'notifications'
       ];
       
       const backupData: any = {
