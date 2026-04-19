@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot, orderBy, limit, updateDoc, doc, getDocs, addDoc, getDoc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { AppNotification, Case, Session, ExpertSession, Task, Judgment, UserNotificationSettings } from '../types';
+import { AppNotification, Case, Session, ExpertSession, Task, Judgment, UserNotificationSettings, Installment } from '../types';
 import { Bell, X, Check, Calendar, Users, Briefcase, AlertCircle, Clock, CheckCircle2, MessageSquare, FileText, Settings as SettingsIcon, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format, isWithinInterval, addDays, startOfDay, endOfDay, parseISO, differenceInDays } from 'date-fns';
@@ -444,6 +444,36 @@ export async function generateNotifications(userId: string, role: string) {
             link: `/cases?id=${judgment.caseId}`
           });
         }
+      }
+    }
+
+    // 5. Check for financial overdue installments
+    if (role !== 'client' && (!settings || settings.types.finance)) {
+      try {
+        const installmentsSnap = await getDocs(query(collection(db, 'installments'), where('status', '==', 'pending')));
+        const installments = installmentsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Installment));
+
+        for (const inst of installments) {
+          if (!inst.dueDate) continue;
+          let dueDate: Date;
+          try {
+            dueDate = parseISO(inst.dueDate);
+            if (isNaN(dueDate.getTime())) throw new Error('Invalid date');
+          } catch (e) { continue; }
+
+          const daysOverdue = differenceInDays(new Date(), dueDate);
+          if (daysOverdue > 0) {
+            await createNotification(userId, {
+              title: 'قسط مالي متأخر',
+              message: `يوجد قسط متأخر بمبلغ ${inst.amount} د.ك في قضية رقم ${inst.caseId}`,
+              type: 'finance',
+              relatedId: inst.id,
+              link: '/finance'
+            });
+          }
+        }
+      } catch (e) {
+        console.error('NotificationCenter: Error check financial installments:', e);
       }
     }
 

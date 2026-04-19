@@ -17,7 +17,12 @@ import {
   Gavel,
   Bell,
   MessageSquare,
-  Printer
+  Printer,
+  AlertTriangle,
+  Zap,
+  Activity,
+  ClipboardList,
+  ChevronLeft
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import {
@@ -69,6 +74,8 @@ export default function Dashboard({ user }: DashboardProps) {
   const [omittedSessions, setOmittedSessions] = useState<(Session | ExpertSession)[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingConsultations, setPendingConsultations] = useState<ConsultationRequest[]>([]);
+  const [urgentActions, setUrgentActions] = useState<{ id: string; title: string; subtitle: string; type: 'missed' | 'deadline' | 'task' | 'finance'; date: string; link: string }[]>([]);
+  const [recentActivity, setRecentActivity] = useState<{ id: string; title: string; subtitle: string; date: string; type: 'doc' | 'proc' | 'judg' | 'pay' }[]>([]);
 
   useEffect(() => {
     if (user.role === 'client') return;
@@ -228,6 +235,22 @@ export default function Dashboard({ user }: DashboardProps) {
       }
     );
 
+    // Recent Activity Feed Aggregator
+    const activityUnsubs = [
+      onSnapshot(query(collection(db, 'documents'), orderBy('uploadDate', 'desc'), limit(5)), (snap) => {
+        const docs = snap.docs.map(d => ({ id: d.id, title: 'إضافة مستند', subtitle: d.data().title, date: d.data().uploadDate, type: 'doc' as const }));
+        setRecentActivity(prev => [...prev.filter(a => a.type !== 'doc'), ...docs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10));
+      }),
+      onSnapshot(query(collection(db, 'procedures'), orderBy('date', 'desc'), limit(5)), (snap) => {
+        const procs = snap.docs.map(d => ({ id: d.id, title: 'إجراء جديد', subtitle: d.data().type, date: d.data().date, type: 'proc' as const }));
+        setRecentActivity(prev => [...prev.filter(a => a.type !== 'proc'), ...procs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10));
+      }),
+      onSnapshot(query(collection(db, 'judgments'), orderBy('date', 'desc'), limit(5)), (snap) => {
+        const judgs = snap.docs.map(d => ({ id: d.id, title: 'صدور حكم', subtitle: d.data().result, date: d.data().date, type: 'judg' as const }));
+        setRecentActivity(prev => [...prev.filter(a => a.type !== 'judg'), ...judgs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10));
+      })
+    ];
+
     return () => {
       casesUnsub();
       financeUnsub();
@@ -238,6 +261,7 @@ export default function Dashboard({ user }: DashboardProps) {
       sessionsUnsubAll();
       expertSessUnsubAll();
       consultUnsub();
+      activityUnsubs.forEach(unsub => unsub());
     };
   }, [user.uid, user.role]);
 
@@ -262,14 +286,21 @@ export default function Dashboard({ user }: DashboardProps) {
       const caseItem = cases.find(c => c.id === s.caseId);
       const sDateStr = s.date?.split('T')[0];
       if (!sDateStr) return false;
-      // Expert sessions often use 'status' instead of decision string
       const hasDecision = s.decision && s.decision !== '';
       const isPending = s.status === 'pending';
       return sDateStr < today && !hasDecision && isPending && caseItem?.status === 'active';
     });
 
     const combinedOmitted = [...omittedRegular, ...omittedExpert];
-    setOmittedSessions(combinedOmitted.slice(0, 10));
+    
+    // Only update if the content actually changed to avoid unnecessary re-renders
+    setOmittedSessions(prev => {
+      const sliced = combinedOmitted.slice(0, 10);
+      if (prev.length === sliced.length && prev.every((v, i) => v.id === sliced[i].id)) {
+        return prev;
+      }
+      return sliced;
+    });
 
     if (combinedOmitted.length > 0) {
       console.log('Dashboard: Omission detection summary:', {
@@ -279,6 +310,60 @@ export default function Dashboard({ user }: DashboardProps) {
       });
     }
   }, [cases, allSessions, allExpertSessions]);
+
+  useEffect(() => {
+    // Aggregated Urgent Actions Logic
+    const urgent: any[] = [];
+    
+    // 1. Missed Decisions (from omittedSessions)
+    omittedSessions.forEach(s => {
+      urgent.push({
+        id: `missed-${s.id}`,
+        title: 'قرار جلسة مفقود',
+        subtitle: `جلسة منتهية لم يتم ترحيل قرارها: ${s.caseId}`,
+        type: 'missed',
+        date: s.date,
+        link: '/sessions?tab=omitted'
+      });
+    });
+
+    // 2. Critical Deadlines (<= 3 days)
+    activeDeadlines.forEach(j => {
+      const d = parseISO(j.appealDeadline);
+      const days = differenceInDays(d, new Date());
+      if (days <= 3 && days >= 0) {
+        urgent.push({
+          id: `deadline-${j.id}`,
+          title: 'موعد استئناف حرج',
+          subtitle: `بقي ${days} أيام على انتهاء المدة القانونية`,
+          type: 'deadline',
+          date: j.appealDeadline,
+          link: `/cases?id=${j.caseId}`
+        });
+      }
+    });
+
+    // 3. Pending Critical Consultation
+    pendingConsultations.forEach(c => {
+      urgent.push({
+        id: `consult-${c.id}`,
+        title: 'استشارة بانتظار الرد',
+        subtitle: `الموكل ${c.clientName} ينتظر الرد على: ${c.subject}`,
+        type: 'task',
+        date: c.date,
+        link: '/consultations'
+      });
+    });
+
+    const sortedUrgent = urgent.sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5);
+    
+    setUrgentActions(prev => {
+      if (prev.length === sortedUrgent.length && prev.every((v, i) => v.id === sortedUrgent[i].id)) {
+        return prev;
+      }
+      return sortedUrgent;
+    });
+  }, [omittedSessions, activeDeadlines, pendingConsultations]);
 
   if (user.role === 'client') {
     return <ClientPortal user={user} />;
@@ -299,29 +384,6 @@ export default function Dashboard({ user }: DashboardProps) {
           </div>
         </div>
       </div>
-
-      {/* Anti-Omission Alert */}
-      {omittedSessions.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-red-50 border-2 border-red-200 p-4 rounded-2xl flex items-center gap-4 shadow-sm"
-        >
-          <div className="p-3 bg-red-100 rounded-xl">
-            <AlertCircle className="w-6 h-6 text-red-600" />
-          </div>
-          <div className="flex-1">
-            <h3 className="text-red-900 font-bold">تنبيه: كاشف السهو (Anti-Omission)</h3>
-            <p className="text-red-700 text-sm font-medium">يوجد {omittedSessions.length} جلسة منتهية لم يتم ترحيل قراراتها بعد. يرجى تحديثها فوراً.</p>
-          </div>
-          <button 
-            onClick={() => navigate('/sessions?tab=omitted')}
-            className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold text-sm hover:bg-red-700 transition-all shadow-md shadow-red-100"
-          >
-            تحديث الآن
-          </button>
-        </motion.div>
-      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -673,6 +735,56 @@ export default function Dashboard({ user }: DashboardProps) {
             ))}
             {pendingConsultations.length === 0 && (
               <div className="text-center py-8 text-slate-400 font-medium">لا توجد استشارات معلقة</div>
+            )}
+          </div>
+        </div>
+      </div>
+      {/* Recent Activity Feed */}
+      <div className="bg-white p-8 rounded-[40px] border border-slate-200 shadow-sm">
+        <div className="flex items-center justify-between mb-8">
+          <h3 className="text-xl font-black text-slate-900 flex items-center gap-3">
+            <div className="w-10 h-10 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600">
+              <Activity className="w-6 h-6" />
+            </div>
+            تتبع النشاط القانوني اللحظي
+          </h3>
+          <div className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full text-xs font-black flex items-center gap-2 animate-pulse">
+            <div className="w-2 h-2 bg-emerald-600 rounded-full" />
+            تحديث فوري نشط
+          </div>
+        </div>
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            {recentActivity.map((activity) => (
+              <motion.div
+                key={activity.id}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="p-5 bg-slate-50 rounded-3xl border border-slate-100 flex flex-col items-center text-center gap-3 hover:bg-white hover:border-indigo-100 hover:shadow-xl transition-all group"
+              >
+                <div className={cn(
+                  "w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm",
+                  activity.type === 'doc' ? "bg-blue-50 text-blue-600" :
+                  activity.type === 'proc' ? "bg-emerald-50 text-emerald-600" :
+                  activity.type === 'judg' ? "bg-amber-50 text-amber-600" :
+                  "bg-indigo-50 text-indigo-600"
+                )}>
+                  {activity.type === 'doc' ? <FileText className="w-6 h-6" /> :
+                   activity.type === 'proc' ? <ClipboardList className="w-6 h-6" /> :
+                   activity.type === 'judg' ? <Gavel className="w-6 h-6" /> :
+                   <Activity className="w-6 h-6" />}
+                </div>
+                <div>
+                  <h4 className="text-xs font-black text-slate-900 mb-1 leading-none">{activity.title}</h4>
+                  <p className="text-[10px] text-slate-500 font-bold line-clamp-1 h-3">{activity.subtitle}</p>
+                </div>
+                <div className="text-[9px] font-black text-slate-400 bg-white px-2 py-1 rounded-lg border border-slate-100">
+                  {format(new Date(activity.date), 'hh:mm a')}
+                </div>
+              </motion.div>
+            ))}
+            {recentActivity.length === 0 && (
+              <div className="col-span-full py-12 text-center text-slate-400 font-bold italic">لا توجد حركات مؤخرة</div>
             )}
           </div>
         </div>

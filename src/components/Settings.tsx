@@ -65,7 +65,8 @@ export default function Settings({ user }: SettingsProps) {
       expert: true,
       task: true,
       note: true,
-      consultation: true
+      consultation: true,
+      finance: true
     }
   });
 
@@ -491,6 +492,7 @@ export default function Settings({ user }: SettingsProps) {
                           { key: 'task', label: 'المهام والعمليات', desc: 'المهام المسندة إليك وتحديثات الحالة' },
                           { key: 'note', label: 'الملاحظات الداخلية', desc: 'عند إضافة ملاحظة جديدة على قضية تتابعها' },
                           { key: 'consultation', label: 'الاستشارات', desc: 'طلبات الاستشارة الجديدة والردود عليها' },
+                          { key: 'finance', label: 'المطالبات المالية', desc: 'تنبيهات الأقساط المتأخرة والتحصيلات المالية' },
                         ].map((type) => (
                           <label key={type.key} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 cursor-pointer hover:bg-white hover:border-indigo-200 transition-all">
                             <div>

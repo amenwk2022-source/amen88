@@ -21,10 +21,11 @@ import {
   ChevronLeft,
   MessageSquare,
   Plus,
-  Send
+  Send,
+  Activity
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Case, Session, ExpertSession, UserProfile, Document, Finance, Procedure, Judgment, ConsultationRequest } from '../types';
+import { Case, Session, ExpertSession, UserProfile, Document, Finance, Procedure, Judgment, ConsultationRequest, Installment } from '../types';
 import { format, parseISO } from 'date-fns';
 import { arSA } from 'date-fns/locale';
 import { cn } from '../lib/utils';
@@ -43,6 +44,7 @@ export default function ClientPortal({ user }: ClientPortalProps) {
   const [procedures, setProcedures] = useState<Procedure[]>([]);
   const [judgments, setJudgments] = useState<Judgment[]>([]);
   const [consultations, setConsultations] = useState<ConsultationRequest[]>([]);
+  const [installments, setInstallments] = useState<Installment[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'cases' | 'documents' | 'finance' | 'consultation'>('overview');
@@ -132,6 +134,16 @@ export default function ClientPortal({ user }: ClientPortalProps) {
           setJudgments(judgSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Judgment)));
         });
 
+        // Listen for installments
+        const instQuery = query(
+          collection(db, 'installments'),
+          where('caseId', 'in', caseIds.slice(0, 10)),
+          orderBy('dueDate', 'asc')
+        );
+        const unsubInst = onSnapshot(instQuery, (instSnap) => {
+          setInstallments(instSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Installment)));
+        });
+
         setLoading(false);
         return () => {
           unsubSessions();
@@ -140,6 +152,7 @@ export default function ClientPortal({ user }: ClientPortalProps) {
           unsubFinance();
           unsubProc();
           unsubJudgment();
+          unsubInst();
         };
       } else {
         setLoading(false);
@@ -354,6 +367,73 @@ export default function ClientPortal({ user }: ClientPortalProps) {
               </div>
             </div>
 
+            {/* Case Progress Tracker */}
+            <div className="bg-white p-8 rounded-[40px] border border-slate-200 shadow-sm overflow-hidden relative group">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-2xl group-hover:bg-indigo-500/10 transition-colors" />
+              <h3 className="text-xl font-black text-slate-900 mb-8 flex items-center gap-3">
+                <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-indigo-100">
+                  <Activity className="w-6 h-6" />
+                </div>
+                مؤشر تقدم القضايا
+              </h3>
+              <div className="space-y-10">
+                {cases.filter(c => c.status !== 'archive').slice(0, 3).map((c) => {
+                  const progressMap = {
+                    'pre-filing': 20,
+                    'active': 50,
+                    'judgment': 75,
+                    'execution': 90,
+                    'archive': 100
+                  };
+                  const progress = progressMap[c.status as keyof typeof progressMap] || 0;
+                  const labelMap = {
+                    'pre-filing': 'تجهيز المستندات',
+                    'active': 'متداولة بالمحكمة',
+                    'judgment': 'صدر بها حكم',
+                    'execution': 'في مرحلة التنفيذ',
+                    'archive': 'مؤرشفة'
+                  };
+
+                  return (
+                    <div key={c.id} className="space-y-4">
+                      <div className="flex justify-between items-end">
+                        <div>
+                          <h4 className="text-lg font-black text-slate-900">قضية رقم: {c.caseNumber || '---'}</h4>
+                          <p className="text-sm text-slate-500 font-bold">{labelMap[c.status as keyof typeof labelMap]}</p>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-2xl font-black text-indigo-600 leading-none">{progress}%</span>
+                        </div>
+                      </div>
+                      <div className="h-4 bg-slate-100 rounded-full overflow-hidden relative border border-slate-200/50">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${progress}%` }}
+                          transition={{ duration: 1, ease: "easeOut" }}
+                          className="h-full bg-gradient-to-r from-indigo-500 via-indigo-600 to-indigo-700 rounded-full shadow-[0_4px_10px_rgba(79,70,229,0.3)]"
+                        />
+                        <div className="absolute inset-0 flex">
+                           {[1,2,3,4].map(tick => (
+                             <div key={tick} className="flex-1 border-l border-white/20 last:border-0" />
+                           ))}
+                        </div>
+                      </div>
+                      <div className="flex justify-between text-[10px] uppercase font-black tracking-widest text-slate-400 px-1">
+                        <span>بداية</span>
+                        <span>مرافعة</span>
+                        <span>حكم</span>
+                        <span>تنفيذ</span>
+                        <span>إنجاز</span>
+                      </div>
+                    </div>
+                  );
+                })}
+                {cases.length === 0 && (
+                  <div className="text-center py-12 text-slate-400 font-bold">لا توجد قضايا نشطة لعرض تقدمها</div>
+                )}
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               {/* Upcoming Sessions */}
               <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
@@ -544,49 +624,70 @@ export default function ClientPortal({ user }: ClientPortalProps) {
         {activeTab === 'finance' && (
           <motion.div
             key="finance"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
             className="space-y-8"
           >
+            {/* Financial Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                <p className="text-slate-500 text-xs font-bold mb-1 uppercase tracking-widest">إجمالي الأتعاب</p>
-                <h3 className="text-2xl font-black text-slate-900">{totalFees.toLocaleString()} د.ك</h3>
+              <div className="bg-white p-8 rounded-[40px] border border-slate-200 shadow-sm relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-50 rounded-full -translate-y-1/2 translate-x-1/2" />
+                <h4 className="text-slate-500 font-bold text-sm mb-2 relative z-10">إجمالي الأتعاب المقررة</h4>
+                <div className="text-3xl font-black text-slate-900 relative z-10">{totalFees.toLocaleString()} <span className="text-sm font-bold text-slate-400">د.ك</span></div>
               </div>
-              <div className="bg-emerald-50 p-6 rounded-2xl border border-emerald-100 shadow-sm">
-                <p className="text-emerald-600 text-xs font-bold mb-1 uppercase tracking-widest">المبالغ المسددة</p>
-                <h3 className="text-2xl font-black text-emerald-900">{totalReceived.toLocaleString()} د.ك</h3>
+              <div className="bg-white p-8 rounded-[40px] border border-slate-200 shadow-sm relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-50 rounded-full -translate-y-1/2 translate-x-1/2" />
+                <h4 className="text-slate-500 font-bold text-sm mb-2 relative z-10">إجمالي المبالغ المسددة</h4>
+                <div className="text-3xl font-black text-emerald-600 relative z-10">{totalReceived.toLocaleString()} <span className="text-sm font-bold text-slate-400">د.ك</span></div>
               </div>
-              <div className="bg-red-50 p-6 rounded-2xl border border-red-100 shadow-sm">
-                <p className="text-red-600 text-xs font-bold mb-1 uppercase tracking-widest">المتبقي</p>
-                <h3 className="text-2xl font-black text-red-900">{totalRemaining.toLocaleString()} د.ك</h3>
+              <div className="bg-white p-8 rounded-[40px] border border-slate-200 shadow-sm relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-rose-50 rounded-full -translate-y-1/2 translate-x-1/2" />
+                <h4 className="text-slate-500 font-bold text-sm mb-2 relative z-10">المتبقي للاستحقاق</h4>
+                <div className="text-3xl font-black text-rose-600 relative z-10">{totalRemaining.toLocaleString()} <span className="text-sm font-bold text-slate-400">د.ك</span></div>
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-              <h3 className="text-lg font-bold text-slate-900 mb-6">تفاصيل الدفعات لكل قضية</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-right">
-                  <thead>
-                    <tr className="border-b border-slate-100">
-                      <th className="pb-4 font-bold text-slate-500 text-sm">رقم القضية</th>
-                      <th className="pb-4 font-bold text-slate-500 text-sm">إجمالي الأتعاب</th>
-                      <th className="pb-4 font-bold text-slate-500 text-sm">المسدد</th>
-                      <th className="pb-4 font-bold text-slate-500 text-sm">المتبقي</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {finances.map((f) => (
-                      <tr key={f.id}>
-                        <td className="py-4 font-bold text-slate-900">{cases.find(c => c.id === f.caseId)?.caseNumber}</td>
-                        <td className="py-4 text-slate-600 font-medium">{f.totalFees.toLocaleString()} د.ك</td>
-                        <td className="py-4 text-emerald-600 font-bold">{f.receivedAmount.toLocaleString()} د.ك</td>
-                        <td className="py-4 text-red-600 font-bold">{(f.totalFees - f.receivedAmount).toLocaleString()} د.ك</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {/* Installments Tracking */}
+            <div className="bg-white p-8 rounded-[40px] border border-slate-200 shadow-sm">
+              <h3 className="text-xl font-black text-slate-900 mb-8 flex items-center gap-3">
+                <div className="w-10 h-10 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600">
+                  <Clock className="w-6 h-6" />
+                </div>
+                جدول الأقساط والمطالبات
+              </h3>
+              <div className="space-y-4">
+                {installments.map((inst) => (
+                  <div key={inst.id} className="flex items-center justify-between p-6 bg-slate-50 rounded-3xl border border-slate-100 group hover:bg-white hover:border-indigo-100 transition-all">
+                    <div className="flex items-center gap-6">
+                      <div className={cn(
+                        "w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-black shrink-0",
+                        inst.status === 'paid' ? "bg-emerald-100 text-emerald-600" :
+                        inst.status === 'overdue' ? "bg-rose-100 text-rose-600" : "bg-slate-200 text-slate-500"
+                      )}>
+                        {inst.status === 'paid' ? <CheckCircle2 className="w-6 h-6" /> : inst.amount.toString()[0]}
+                      </div>
+                      <div>
+                        <h4 className="font-black text-slate-900">مبلغ: {inst.amount.toLocaleString()} د.ك</h4>
+                        <p className="text-xs text-slate-500 font-bold">تاريخ الاستحقاق: {format(new Date(inst.dueDate), 'dd MMMM yyyy', { locale: arSA })}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className={cn(
+                        "px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm",
+                        inst.status === 'paid' ? "bg-emerald-600 text-white" :
+                        inst.status === 'overdue' ? "bg-rose-600 text-white" : "bg-slate-300 text-white"
+                      )}>
+                        {inst.status === 'paid' ? 'تم السداد' : inst.status === 'overdue' ? 'متأخر' : 'منتظر'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+                {installments.length === 0 && (
+                  <div className="py-20 text-center text-slate-400 font-bold italic border-2 border-dashed border-slate-200 rounded-[40px] bg-slate-50/50">
+                    لا توجد أقساط مجدولة حالياً
+                  </div>
+                )}
               </div>
             </div>
           </motion.div>

@@ -65,12 +65,42 @@ export interface Finance {
   sundries: number;
 }
 
+export interface Payment {
+  id: string;
+  caseId: string;
+  amount: number;
+  date: string;
+  type: 'cash' | 'transfer' | 'knet' | 'check';
+  reference?: string;
+  note?: string;
+  receivedBy: string;
+}
+
+export interface Expense {
+  id: string;
+  caseId?: string;
+  amount: number;
+  date: string;
+  category: string;
+  description: string;
+  recordedBy: string;
+}
+
 export interface Document {
   id: string;
   caseId: string;
   title: string;
   fileUrl: string;
   uploadDate: string;
+}
+
+export interface Installment {
+  id: string;
+  financeId: string;
+  caseId: string;
+  amount: number;
+  dueDate: string;
+  status: 'pending' | 'paid' | 'overdue';
 }
 
 export interface Judgment {
@@ -105,7 +135,7 @@ export interface AppNotification {
   userId: string;
   title: string;
   message: string;
-  type: 'deadline' | 'session' | 'system' | 'expert' | 'task' | 'note' | 'consultation';
+  type: 'deadline' | 'session' | 'system' | 'expert' | 'task' | 'note' | 'consultation' | 'finance';
   date: string;
   isRead: boolean;
   link?: string;
@@ -123,6 +153,7 @@ export interface UserNotificationSettings {
     task: boolean;
     note: boolean;
     consultation: boolean;
+    finance: boolean;
   };
 }
 

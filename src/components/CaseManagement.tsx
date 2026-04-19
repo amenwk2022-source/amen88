@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, where, getDocs } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { Plus, Search, Filter, Briefcase, Scale, Gavel, Archive, MoreVertical, Trash2, Edit2, X, Check, ArrowLeftRight, CalendarPlus, FileCheck, DollarSign, Clock, FileText, Eye, CheckCircle2, Printer, Users } from 'lucide-react';
+import { Plus, Search, Filter, Briefcase, Scale, Gavel, Archive, MoreVertical, Trash2, Edit2, X, Check, ArrowLeftRight, CalendarPlus, FileCheck, DollarSign, Clock, FileText, Eye, CheckCircle2, Printer, Users, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Case, CaseStatus, Client, Judgment, UserProfile, SystemSettings } from '../types';
 import { cn } from '../lib/utils';
@@ -93,7 +93,22 @@ export default function CaseManagement({ user }: CaseManagementProps) {
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
   const [clientSearchTerm, setClientSearchTerm] = useState('');
   const [isClientDropdownOpen, setIsClientDropdownOpen] = useState(false);
+  const [conflictWarning, setConflictWarning] = useState<string | null>(null);
   const clientDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (formData.opponent && formData.opponent.length > 2) {
+      const isConflict = clients.some(c => c.name === formData.opponent) || 
+                         cases.some(c => c.clientName === formData.opponent);
+      if (isConflict) {
+        setConflictWarning(`تحذير تضارب مصالح: الاسم "${formData.opponent}" مسجل لدينا كعميل. يرجى مراجعة الملفات قبل المتابعة.`);
+      } else {
+        setConflictWarning(null);
+      }
+    } else {
+      setConflictWarning(null);
+    }
+  }, [formData.opponent, clients, cases]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -955,12 +970,28 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-slate-700">الخصم</label>
-                    <input
-                      type="text"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
-                      value={formData.opponent}
-                      onChange={(e) => setFormData({ ...formData, opponent: e.target.value })}
-                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        className={cn(
+                          "w-full bg-slate-50 border rounded-xl px-4 py-3 text-sm font-medium transition-all outline-none",
+                          conflictWarning ? "border-rose-300 ring-2 ring-rose-50" : "border-slate-200 focus:ring-2 focus:ring-indigo-600 focus:border-transparent"
+                        )}
+                        value={formData.opponent}
+                        onChange={(e) => setFormData({ ...formData, opponent: e.target.value })}
+                        placeholder="اسم الخصم بالكامل..."
+                      />
+                      {conflictWarning && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className="absolute right-0 -bottom-10 z-10 bg-rose-600 text-white text-[10px] font-black px-3 py-1.5 rounded-lg shadow-lg flex items-center gap-2"
+                        >
+                          <AlertTriangle className="w-3 h-3" />
+                          {conflictWarning}
+                        </motion.div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="space-y-2">
@@ -1829,7 +1860,8 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                 <th className="border border-slate-900 p-3 text-right text-sm font-black">الرقم الآلي</th>
                 <th className="border border-slate-900 p-3 text-right text-sm font-black">الموكل</th>
                 <th className="border border-slate-900 p-3 text-right text-sm font-black">الخصم</th>
-                <th className="border border-slate-900 p-3 text-right text-sm font-black">آخر جلسة</th>
+                <th className="border border-slate-900 p-3 text-right text-sm font-black">تاريخ آخر جلسة</th>
+                <th className="border border-slate-900 p-3 text-right text-sm font-black">قرار الجلسة</th>
               </tr>
             </thead>
             <tbody>
@@ -1846,6 +1878,7 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                     <td className="border border-slate-900 p-3 text-sm font-bold">{c.clientName || '---'}</td>
                     <td className="border border-slate-900 p-3 text-sm font-bold">{c.opponent || '---'}</td>
                     <td className="border border-slate-900 p-3 text-sm font-bold">{lastSession?.date || '---'}</td>
+                    <td className="border border-slate-900 p-3 text-sm font-bold">{lastSession?.decision || '---'}</td>
                   </tr>
                 );
               })}

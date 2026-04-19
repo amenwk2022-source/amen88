@@ -17,6 +17,7 @@ interface ReportsProps {
 export default function Reports({ user }: ReportsProps) {
   const [cases, setCases] = useState<Case[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [sessions, setSessions] = useState<Session[]>([]);
   const [finances, setFinances] = useState<Finance[]>([]);
   const [systemSettings, setSystemSettings] = useState<SystemSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -56,6 +57,11 @@ export default function Reports({ user }: ReportsProps) {
     }, (err) => {
       handleFirestoreError(err, OperationType.LIST, 'clients');
     });
+    const unsubSessions = onSnapshot(collection(db, 'sessions'), (snapshot) => {
+      setSessions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Session)));
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'sessions');
+    });
     const unsubFinance = onSnapshot(collection(db, 'finance'), (snapshot) => {
       const fetchedFinance = snapshot.docs.map(doc => {
         const data = doc.data();
@@ -92,6 +98,7 @@ export default function Reports({ user }: ReportsProps) {
     return () => {
       unsubCases();
       unsubClients();
+      unsubSessions();
       unsubFinance();
     };
   }, []);
@@ -205,7 +212,11 @@ export default function Reports({ user }: ReportsProps) {
     });
   };
 
-  const filteredCases = filterData(cases);
+  const filteredCases = filterData(cases.map(c => {
+    const caseSessions = sessions.filter(s => s.caseId === c.id).sort((a, b) => b.date.localeCompare(a.date));
+    const lastSession = caseSessions[0];
+    return { ...c, lastDecision: lastSession?.decision || '---' };
+  }));
   const filteredFinances = filterData(finances.map(f => {
     const c = cases.find(caseItem => caseItem.id === f.caseId);
     return { ...f, createdAt: c?.createdAt, clientName: c?.clientName, caseNumber: c?.caseNumber };
@@ -419,6 +430,7 @@ export default function Reports({ user }: ReportsProps) {
                   <th className="py-4 font-black text-slate-900 text-lg text-right">رقم القضية</th>
                   <th className="py-4 font-black text-slate-900 text-lg text-right">الموكل</th>
                   <th className="py-4 font-black text-slate-900 text-lg text-right">المحكمة</th>
+                  <th className="py-4 font-black text-slate-900 text-lg text-right">قرار آخر جلسة</th>
                   <th className="py-4 font-black text-slate-900 text-lg text-right">الحالة</th>
                   <th className="py-4 font-black text-slate-900 text-lg text-right">التاريخ</th>
                 </tr>
@@ -429,6 +441,7 @@ export default function Reports({ user }: ReportsProps) {
                     <td className="py-4 font-black text-slate-900 text-2xl">{c.caseNumber || '---'}</td>
                     <td className="py-4 text-slate-800 font-extrabold text-xl">{c.clientName}</td>
                     <td className="py-4 text-slate-700 font-bold text-lg">{c.court || '---'}</td>
+                    <td className="py-4 text-slate-600 font-bold text-lg">{(c as any).lastDecision}</td>
                     <td className="py-4">
                       <span className={cn(
                         "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest",
