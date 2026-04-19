@@ -7,6 +7,7 @@ import {
   collection, 
   onSnapshot, 
   getDoc, 
+  getDocs,
   setDoc, 
   deleteDoc,
   query,
@@ -33,7 +34,9 @@ import {
   Bell,
   Monitor,
   AtSign,
-  FileText
+  FileText,
+  Download,
+  Database
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -44,8 +47,9 @@ interface SettingsProps {
 }
 
 export default function Settings({ user }: SettingsProps) {
-  const [activeTab, setActiveTab] = useState<'profile' | 'office' | 'users' | 'notifications'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'office' | 'users' | 'notifications' | 'backup'>('profile');
   const [isSaving, setIsSaving] = useState(false);
+  const [isBackupLoading, setIsBackupLoading] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Profile State
@@ -244,6 +248,48 @@ export default function Settings({ user }: SettingsProps) {
     }
   };
 
+  const handleBackup = async () => {
+    if (user.role !== 'admin') return;
+    setIsBackupLoading(true);
+    try {
+      const collections = [
+        'users', 'cases', 'clients', 'finance', 'sessions', 
+        'expertSessions', 'judgments', 'tasks', 'consultations', 
+        'documents', 'caseNotes', 'notificationSettings', 'settings'
+      ];
+      
+      const backupData: any = {
+        version: '1.0',
+        timestamp: new Date().toISOString(),
+        officeName: systemSettings.officeName,
+        data: {}
+      };
+
+      for (const collName of collections) {
+        const snap = await getDocs(collection(db, collName));
+        backupData.data[collName] = snap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+      }
+
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `lawyer-os-backup-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Backup error:', err);
+      // We don't use alert, ideally a toast here
+    } finally {
+      setIsBackupLoading(false);
+    }
+  };
+
   const addCaseType = () => {
     const type = prompt('أدخل نوع القضية الجديد:');
     if (type && !systemSettings.caseTypes.includes(type)) {
@@ -331,6 +377,18 @@ export default function Settings({ user }: SettingsProps) {
             <Bell className="w-4 h-4" />
             التنبيهات
           </button>
+          {user.role === 'admin' && (
+            <button
+              onClick={() => setActiveTab('backup')}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all",
+                activeTab === 'backup' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-100" : "text-slate-500 hover:bg-slate-50"
+              )}
+            >
+              <Database className="w-4 h-4" />
+              النسخ الاحتياطي
+            </button>
+          )}
         </div>
       </div>
 
@@ -533,6 +591,77 @@ export default function Settings({ user }: SettingsProps) {
                 </button>
               </div>
             </form>
+          </motion.div>
+        )}
+
+        {activeTab === 'backup' && (
+          <motion.div
+            key="backup"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="space-y-8"
+          >
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
+                <Database className="w-5 h-5 text-indigo-600" />
+                <h2 className="text-lg font-bold text-slate-900">النسخ الاحتياطي وتصدير البيانات</h2>
+              </div>
+              <div className="p-12 flex flex-col items-center justify-center text-center space-y-6">
+                <div className="w-24 h-24 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600">
+                  <Database className="w-12 h-12" />
+                </div>
+                <div className="max-w-md space-y-2">
+                  <h3 className="text-xl font-black text-slate-900">تصدير قاعدة البيانات بالكامل</h3>
+                  <p className="text-sm text-slate-500 font-medium">
+                    يمكنك تصدير كافة بيانات المكتب (القضايا، الموكلين، السجلات المالية، والجلسات) في ملف JSON واحد للحتفاظ به كنسخة احتياطية خارج النظام.
+                  </p>
+                </div>
+                
+                <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex items-start gap-3 text-right max-w-lg">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-800 font-bold leading-relaxed">
+                    يحتوي هذا الملف على معلومات كافية لإعادة بناء قاعدة البيانات. يرجى الاحتفاظ به في مكان آمن وعدم مشاركته مع أشخاص غير مخولين.
+                  </p>
+                </div>
+
+                <div className="pt-4">
+                  <button
+                    onClick={handleBackup}
+                    disabled={isBackupLoading}
+                    className="flex items-center gap-3 bg-slate-900 text-white px-10 py-5 rounded-2xl font-black shadow-2xl shadow-indigo-100 hover:bg-slate-800 transition-all disabled:opacity-50"
+                  >
+                    {isBackupLoading ? (
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Download className="w-6 h-6 text-indigo-400" />
+                    )}
+                    بدء تصدير النسخة الاحتياطية
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-start gap-4">
+                <div className="p-3 bg-emerald-50 rounded-xl text-emerald-600">
+                  <Shield className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-slate-900 mb-1">نسخ احتياطي آمن</h4>
+                  <p className="text-xs text-slate-500 font-medium leading-relaxed">يتم استخراج البيانات مباشرة من خوادم السحاب وتنسيقها بشكل يسهل قراءته واسترجاعه.</p>
+                </div>
+              </div>
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-start gap-4">
+                <div className="p-3 bg-blue-50 rounded-xl text-blue-600">
+                  <Globe className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-slate-900 mb-1">تنسيق قياسي (JSON)</h4>
+                  <p className="text-xs text-slate-500 font-medium leading-relaxed">تصدير البيانات بتنسيق JSON العالمي الذي يدعم التوافق مع الأنظمة القانونية الأخرى.</p>
+                </div>
+              </div>
+            </div>
           </motion.div>
         )}
 
