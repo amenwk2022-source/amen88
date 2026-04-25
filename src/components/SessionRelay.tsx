@@ -58,6 +58,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
   const [sessionToDeleteId, setSessionToDeleteId] = useState<string | null>(null);
   const [isOmitModalOpen, setIsOmitModalOpen] = useState(false);
   const [sessionToOmitId, setSessionToOmitId] = useState<string | null>(null);
+  const [omittingType, setOmittingType] = useState<'regular' | 'expert'>('regular');
 
   useEffect(() => {
     let cq = query(collection(db, 'cases'), orderBy('createdAt', 'desc'));
@@ -219,14 +220,23 @@ export default function SessionRelay({ user }: SessionRelayProps) {
   const handleOmitSession = async () => {
     if (!sessionToOmitId) return;
     try {
-      await updateDoc(doc(db, 'sessions', sessionToOmitId), {
-        decision: 'تم التجاوز',
+      const collectionName = omittingType === 'expert' ? 'expertSessions' : 'sessions';
+      const updateData: any = {
         updatedAt: new Date().toISOString()
-      });
+      };
+      
+      if (omittingType === 'expert') {
+        updateData.decision = 'تم التجاوز';
+        updateData.status = 'attended';
+      } else {
+        updateData.decision = 'تم التجاوز';
+      }
+
+      await updateDoc(doc(db, collectionName, sessionToOmitId), updateData);
       setIsOmitModalOpen(false);
       setSessionToOmitId(null);
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'sessions');
+      handleFirestoreError(err, OperationType.WRITE, omittingType === 'expert' ? 'expertSessions' : 'sessions');
     }
   };
 
@@ -402,7 +412,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
     if (activeTab === 'today') return sDate === todayStr && courtMatch;
     if (activeTab === 'upcoming') return sDate > todayStr && courtMatch;
     if (activeTab === 'omitted') {
-      const isOmittedRegular = sDate < realTodayStr && !s.decision && s.caseInfo?.status === 'active' && courtMatch;
+      const isOmittedRegular = sDate < realTodayStr && !s.decision && s.caseInfo?.status !== 'archive' && courtMatch;
       return isOmittedRegular;
     }
     if (activeTab === 'search') return sDate === selectedDate && courtMatch;
@@ -418,7 +428,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
       if (!s.date || !s.caseInfo) return false;
       const sDate = s.date.split('T')[0];
       const courtMatch = selectedCourt === 'ALL' || s.caseInfo?.court === selectedCourt;
-      const isOmittedExpert = sDate < realTodayStr && s.status === 'pending' && (!s.decision || s.decision === '') && s.caseInfo?.status === 'active' && courtMatch;
+      const isOmittedExpert = sDate < realTodayStr && s.status === 'pending' && !s.isRelayed && (!s.decision || s.decision === '') && s.caseInfo?.status !== 'archive' && courtMatch;
       return isOmittedExpert;
     });
 
@@ -458,7 +468,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
     }).length + expertSessions.filter(s => {
       if (!s.date) return false;
       const caseItem = cases.find(c => c.id === s.caseId);
-      return s.date.split('T')[0] < realTodayStr && s.status === 'pending' && (!s.decision || s.decision === '') && caseItem?.status === 'active';
+      return s.date.split('T')[0] < realTodayStr && s.status === 'pending' && !s.isRelayed && (!s.decision || s.decision === '') && caseItem?.status !== 'archive';
     }).length,
   };
 
@@ -770,7 +780,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                     </td>
                     {activeTab === 'omitted' && (
                       <td className="p-4 border-l border-slate-100 print:border-slate-200">
-                        <span className="text-sm font-black text-red-600">---</span>
+                        <span className="text-sm font-black text-red-600">{safeFormat(session.date, 'yyyy/MM/dd')}</span>
                       </td>
                     )}
                     <td className="p-4 print:text-base">
@@ -830,6 +840,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                           </button>
                           <button
                             onClick={() => {
+                              setOmittingType('regular');
                               setSessionToOmitId(session.id);
                               setIsOmitModalOpen(true);
                             }}
@@ -942,14 +953,55 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                       <td className="p-4 print:text-base">
                         <div className="flex flex-col gap-2">
                           {activeTab === 'omitted' ? (
-                            <button 
-                              onClick={() => navigate(`/expert-sessions?id=${session.id}`)}
-                              className="text-xs font-black text-indigo-600 hover:underline bg-white px-3 py-1 rounded-lg border border-slate-200 shadow-sm w-fit"
-                            >
-                              إثبات قرار الخبير
-                            </button>
+                            <div className="flex items-center gap-3">
+                              <button 
+                                onClick={() => navigate(`/expert-sessions?id=${session.id}`)}
+                                className="text-xs font-black text-indigo-600 hover:underline bg-white px-3 py-1 rounded-lg border border-slate-200 shadow-sm whitespace-nowrap"
+                              >
+                                إثبات قرار الخبير
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setOmittingType('expert');
+                                  setSessionToOmitId(session.id);
+                                  setIsOmitModalOpen(true);
+                                }}
+                                className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition-all"
+                                title="تجاهل"
+                              >
+                                <XCircle className="w-4 h-4" />
+                              </button>
+                              <button 
+                                onClick={() => navigate(`/cases?id=${session.caseId}`)}
+                                className="p-1.5 hover:bg-slate-100 rounded-lg text-indigo-400 hover:text-indigo-600 transition-all"
+                                title="تفاصيل القضية"
+                              >
+                                <ArrowRight className="w-4 h-4" />
+                              </button>
+                            </div>
                           ) : (
-                            <div className="hidden print:block h-12 border-b-2 border-dashed border-slate-200 w-full"></div>
+                            <>
+                              <div className="flex items-center gap-3 print:hidden">
+                                {session.decision ? (
+                                  <div className="flex flex-col">
+                                    <p className="text-sm font-bold text-emerald-900 leading-relaxed">{session.decision}</p>
+                                    {session.nextDate && (
+                                      <p className="text-[10px] text-emerald-600 font-black mt-1">
+                                        القادمة: {session.nextDate}
+                                      </p>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <button 
+                                    onClick={() => navigate(`/expert-sessions?id=${session.id}`)}
+                                    className="text-xs font-black text-indigo-600 hover:underline bg-indigo-50/50 px-4 py-2 rounded-xl border border-indigo-100/50"
+                                  >
+                                    إثبات الإجراء
+                                  </button>
+                                )}
+                              </div>
+                              <div className="hidden print:block h-12 border-b-2 border-dashed border-slate-200 w-full"></div>
+                            </>
                           )}
                         </div>
                       </td>

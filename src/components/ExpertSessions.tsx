@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, query, orderBy, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { ExpertSession, Case, UserProfile } from '../types';
-import { useNavigate } from 'react-router-dom';
-import { Users, Calendar, MapPin, Search, Plus, X, Save, Trash2, CheckCircle2, Clock, AlertCircle, ArrowRight, CalendarPlus, ArrowRightLeft } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Users, Calendar, MapPin, Search, Plus, X, Save, Trash2, CheckCircle2, Clock, AlertCircle, ArrowRight, CalendarPlus, ArrowRightLeft, Edit2 } from 'lucide-react';
 import { format, isPast, isToday, isFuture, parseISO } from 'date-fns';
 import { arSA } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
@@ -41,6 +41,21 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
   });
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
+  const [editingSession, setEditingSession] = useState<ExpertSession | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+
+  const location = useLocation();
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const sessionId = params.get('id');
+    if (sessionId && expertSessions.length > 0) {
+      const session = expertSessions.find(s => s.id === sessionId);
+      if (session && session.status === 'pending') {
+        setFollowUpModal({ isOpen: true, session });
+      }
+    }
+  }, [location.search, expertSessions]);
 
   useEffect(() => {
     let cq = query(collection(db, 'cases'), orderBy('createdAt', 'desc'));
@@ -93,11 +108,60 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
     }
   };
 
+  const handleUpdateSession = async () => {
+    if (user.role === 'client' || !editingSession) return;
+    if (!formData.date || !formData.expertName) return;
+
+    try {
+      await updateDoc(doc(db, 'expertSessions', editingSession.id), {
+        date: formData.date,
+        time: formData.time,
+        expertName: formData.expertName,
+        officeLocation: formData.officeLocation,
+        notes: formData.notes,
+        updatedAt: new Date().toISOString()
+      });
+      setIsModalOpen(false);
+      setEditingSession(null);
+      setFormData({ date: '', time: '', expertName: '', officeLocation: '', notes: '' });
+      setSelectedCase(null);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'expertSessions');
+    }
+  };
+
+  const openAddModal = () => {
+    setEditingSession(null);
+    setFormData({ date: '', time: '', expertName: '', officeLocation: '', notes: '' });
+    setSelectedCase(null);
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (session: ExpertSession) => {
+    setEditingSession(session);
+    setFormData({
+      date: session.date,
+      time: session.time || '',
+      expertName: session.expertName,
+      officeLocation: session.officeLocation,
+      notes: session.notes || ''
+    });
+    const c = getSessionCase(session.caseId);
+    if (c) setSelectedCase(c);
+    setIsModalOpen(true);
+  };
+
   const updateStatus = async (id: string, status: ExpertSession['status']) => {
     try {
       if (status === 'attended') {
         const session = expertSessions.find(s => s.id === id);
         if (session) {
+          setFollowUpData({
+            nextDate: session.nextDate || '',
+            nextTime: '', // Time might need to be stored in next session but we don't have it explicitly on the old one
+            decision: session.decision || '',
+            isReserved: session.status === 'reserved_for_report'
+          });
           setFollowUpModal({ isOpen: true, session });
           return;
         }
@@ -111,9 +175,12 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
   const handleFollowUp = async () => {
     if (!followUpModal.session) return;
     try {
+      const isActuallyRelayed = followUpData.isReserved || !!followUpData.nextDate || !!followUpData.decision;
+      
       const updates: any = {
         status: followUpData.isReserved ? 'reserved_for_report' : 'attended',
         decision: followUpData.decision,
+        isRelayed: isActuallyRelayed,
         updatedAt: new Date().toISOString()
       };
 
@@ -171,19 +238,41 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
           </h1>
           <p className="text-slate-500 font-bold mt-1">إدارة مواعيد الخبراء والزيارات الميدانية</p>
         </div>
-        {isLawyer && (
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
-          >
-            <Plus className="w-5 h-5" />
-            إضافة جلسة خبير
-          </button>
-        )}
+        <div className="flex gap-4 items-center">
+          <div className="flex p-1 bg-slate-100 rounded-2xl">
+            <button
+              onClick={() => setShowHistory(false)}
+              className={cn(
+                "px-4 py-2 rounded-xl text-xs font-black transition-all",
+                !showHistory ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500"
+              )}
+            >
+              الجلسات النشطة
+            </button>
+            <button
+              onClick={() => setShowHistory(true)}
+              className={cn(
+                "px-4 py-2 rounded-xl text-xs font-black transition-all",
+                showHistory ? "bg-indigo-600 text-white shadow-sm" : "text-slate-500"
+              )}
+            >
+              سجل الجلسات (المرحلة)
+            </button>
+          </div>
+          {isLawyer && (
+            <button
+              onClick={openAddModal}
+              className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+            >
+              <Plus className="w-5 h-5" />
+              إضافة جلسة خبير
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {expertSessions.filter(s => cases.some(c => c.id === s.caseId) && !s.isRelayed).map((session) => {
+        {expertSessions.filter(s => cases.some(c => c.id === s.caseId) && (showHistory ? s.isRelayed : !s.isRelayed)).map((session) => {
           const c = getSessionCase(session.caseId);
           const sessionDate = (() => {
             try {
@@ -222,6 +311,12 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
                 </div>
                 {isLawyer && (
                   <div className="flex gap-1">
+                    <button 
+                      onClick={() => openEditModal(session)} 
+                      className="p-2 text-slate-400 hover:bg-slate-50 rounded-lg transition-all"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
                     <button 
                       onClick={() => {
                         setSessionToDelete(session.id);
@@ -284,16 +379,25 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
                   <div className="flex items-center gap-1">
                     {session.status === 'attended' || session.status === 'reserved_for_report' ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    ) : isPastSession ? (
+                    ) : session.status === 'postponed' ? (
+                      <Clock className="w-4 h-4 text-amber-500" />
+                    ) : (isPastSession && !session.isRelayed) ? (
                       <AlertCircle className="w-4 h-4 text-red-400" />
                     ) : (
                       <Clock className="w-4 h-4 text-indigo-400" />
                     )}
                     <span className={cn(
                       "text-[10px] font-black uppercase",
-                      (session.status === 'attended' || session.status === 'reserved_for_report') ? "text-emerald-600" : isPastSession ? "text-red-400" : "text-indigo-400"
+                      session.status === 'reserved_for_report' ? "text-emerald-600" : 
+                      session.status === 'attended' ? "text-emerald-600" :
+                      session.status === 'postponed' ? "text-amber-600" :
+                      (isPastSession && !session.isRelayed) ? "text-red-400" : "text-indigo-400"
                     )}>
-                      {session.status === 'reserved_for_report' ? 'محجوز للتقرير' : session.status === 'attended' ? 'تمت' : isPastSession ? 'فائتة' : 'قادمة'}
+                      {session.status === 'reserved_for_report' ? 'محجوز للتقرير' : 
+                       session.status === 'attended' ? 'تمت' : 
+                       session.status === 'postponed' ? 'مؤجلة' :
+                       (isPastSession && !session.isRelayed) ? 'فائتة' : 
+                       session.isRelayed ? 'تم ترحيلها' : 'قادمة'}
                     </span>
                   </div>
                   {session.nextDate && (
@@ -316,16 +420,25 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
                   <div className="flex items-center gap-1">
                     {session.status === 'attended' || session.status === 'reserved_for_report' ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    ) : isPastSession ? (
+                    ) : session.status === 'postponed' ? (
+                      <Clock className="w-4 h-4 text-amber-500" />
+                    ) : (isPastSession && !session.isRelayed) ? (
                       <AlertCircle className="w-4 h-4 text-red-400" />
                     ) : (
                       <Clock className="w-4 h-4 text-indigo-400" />
                     )}
                     <span className={cn(
                       "text-[10px] font-black uppercase",
-                      (session.status === 'attended' || session.status === 'reserved_for_report') ? "text-emerald-600" : isPastSession ? "text-red-400" : "text-indigo-400"
+                      session.status === 'reserved_for_report' ? "text-emerald-600" : 
+                      session.status === 'attended' ? "text-emerald-600" :
+                      session.status === 'postponed' ? "text-amber-600" :
+                      (isPastSession && !session.isRelayed) ? "text-red-400" : "text-indigo-400"
                     )}>
-                      {session.status === 'reserved_for_report' ? 'محجوز للتقرير' : session.status === 'attended' ? 'تمت' : isPastSession ? 'فائتة' : 'قادمة'}
+                      {session.status === 'reserved_for_report' ? 'محجوز للتقرير' : 
+                       session.status === 'attended' ? 'تمت' : 
+                       session.status === 'postponed' ? 'مؤجلة' :
+                       (isPastSession && !session.isRelayed) ? 'فائتة' : 
+                       session.isRelayed ? 'تم ترحيلها' : 'قادمة'}
                     </span>
                   </div>
                   {session.nextDate && (
@@ -468,58 +581,75 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
               className="relative bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden"
             >
               <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-                <h2 className="text-xl font-black text-slate-900">إضافة جلسة خبير جديدة</h2>
-                <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-white rounded-xl transition-all">
+                <h2 className="text-xl font-black text-slate-900">
+                  {editingSession ? 'تعديل جلسة الخبير' : 'إضافة جلسة خبير جديدة'}
+                </h2>
+                <button 
+                  onClick={() => {
+                    setIsModalOpen(false);
+                    setEditingSession(null);
+                    setFormData({ date: '', time: '', expertName: '', officeLocation: '', notes: '' });
+                    setSelectedCase(null);
+                  }} 
+                  className="p-2 hover:bg-white rounded-xl transition-all"
+                >
                   <X className="w-5 h-5 text-slate-400" />
                 </button>
               </div>
               <div className="p-8 space-y-6">
-                <div className="space-y-4">
-                  <div className="relative">
-                    <Search className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder="ابحث برقم القضية أو الرقم الآلي..."
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-12 pl-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 transition-all"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                  </div>
-
-                  {searchTerm && (
-                    <div className="max-h-40 overflow-y-auto border border-slate-100 rounded-xl divide-y divide-slate-50">
-                      {filteredCases.map(c => (
-                        <button
-                          key={c.id}
-                          onClick={() => {
-                            setSelectedCase(c);
-                            setSearchTerm('');
-                          }}
-                          className="w-full p-3 text-right hover:bg-indigo-50 transition-all flex items-center justify-between"
-                        >
-                          <div>
-                            <p className="text-sm font-black text-slate-900">{c.caseNumber}</p>
-                            <p className="text-[10px] font-bold text-slate-400">{c.clientName}</p>
-                          </div>
-                          <span className="text-[10px] font-black text-indigo-600 bg-indigo-100 px-2 py-1 rounded-lg">
-                            {c.autoNumber || 'بدون رقم آلي'}
-                          </span>
-                        </button>
-                      ))}
+                {!editingSession && (
+                  <div className="space-y-4">
+                    <div className="relative">
+                      <Search className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="ابحث برقم القضية أو الرقم الآلي..."
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-12 pl-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 transition-all"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                      />
                     </div>
-                  )}
 
-                  {selectedCase && (
-                    <div className="p-4 bg-indigo-50 rounded-2xl border border-indigo-100 flex items-center justify-between">
-                      <div>
-                        <p className="text-xs font-bold text-indigo-600">القضية المختارة:</p>
-                        <p className="text-sm font-black text-slate-900">{selectedCase.caseNumber}</p>
+                    {searchTerm && (
+                      <div className="max-h-40 overflow-y-auto border border-slate-100 rounded-xl divide-y divide-slate-50">
+                        {filteredCases.map(c => (
+                          <button
+                            key={c.id}
+                            onClick={() => {
+                              setSelectedCase(c);
+                              setSearchTerm('');
+                            }}
+                            className="w-full p-3 text-right hover:bg-indigo-50 transition-all flex items-center justify-between"
+                          >
+                            <div>
+                              <p className="text-sm font-black text-slate-900">{c.caseNumber}</p>
+                              <p className="text-[10px] font-bold text-slate-400">{c.clientName}</p>
+                            </div>
+                            <span className="text-[10px] font-black text-indigo-600 bg-indigo-100 px-2 py-1 rounded-lg">
+                              {c.autoNumber || 'بدون رقم آلي'}
+                            </span>
+                          </button>
+                        ))}
                       </div>
+                    )}
+                  </div>
+                )}
+
+                {(selectedCase || editingSession) && (
+                  <div className="p-4 bg-indigo-50 rounded-2xl border border-indigo-100 flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-bold text-indigo-600">القضية المختارة:</p>
+                      <p className="text-sm font-black text-slate-900">
+                        {editingSession ? getSessionCase(editingSession.caseId)?.caseNumber : selectedCase?.caseNumber}
+                      </p>
+                    </div>
+                    {!editingSession && (
                       <button onClick={() => setSelectedCase(null)} className="p-2 hover:bg-white rounded-lg transition-all text-red-500">
                         <X className="w-4 h-4" />
                       </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
+                )}
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -573,28 +703,32 @@ export default function ExpertSessions({ user }: ExpertSessionsProps) {
                       onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                     />
                   </div>
-                </div>
 
-                <div className="pt-4 flex gap-4">
-                  <button
-                    onClick={handleAddSession}
-                    className="flex-1 bg-indigo-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
-                  >
-                    <Save className="w-5 h-5" />
-                    حفظ الجلسة
-                  </button>
-                  <button
-                    onClick={() => setIsModalOpen(false)}
-                    className="px-8 bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl hover:bg-slate-200 transition-all"
-                  >
-                    إلغاء
-                  </button>
+                  <div className="pt-4 flex gap-4">
+                    <button
+                      onClick={editingSession ? handleUpdateSession : handleAddSession}
+                      className="flex-1 bg-indigo-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+                    >
+                      <Save className="w-5 h-5" />
+                      {editingSession ? 'حفظ التعديلات' : 'حفظ الجلسة'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsModalOpen(false);
+                        setEditingSession(null);
+                        setFormData({ date: '', time: '', expertName: '', officeLocation: '', notes: '' });
+                        setSelectedCase(null);
+                      }}
+                      className="px-8 bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl hover:bg-slate-200 transition-all"
+                    >
+                      إلغاء
+                    </button>
+                  </div>
                 </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
 
       <ConfirmModal
         isOpen={isDeleteModalOpen}

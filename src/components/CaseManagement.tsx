@@ -2,11 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, where, getDocs } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { Plus, Search, Filter, Briefcase, Scale, Gavel, Archive, MoreVertical, Trash2, Edit2, X, Check, ArrowLeftRight, CalendarPlus, FileCheck, DollarSign, Clock, FileText, Eye, CheckCircle2, Printer, Users, AlertTriangle } from 'lucide-react';
+import { Plus, Search, Filter, Briefcase, Scale, Gavel, Archive, MoreVertical, Trash2, Edit2, X, Check, ArrowLeftRight, CalendarPlus, FileCheck, DollarSign, Clock, FileText, Eye, CheckCircle2, Printer, Users, AlertTriangle, AlertCircle, Sparkles, Zap, RefreshCw, LayoutGrid, List, MoreHorizontal } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import Markdown from 'react-markdown';
 import { Case, CaseStatus, Client, Judgment, UserProfile, SystemSettings } from '../types';
 import { cn } from '../lib/utils';
 import { addDays, format, parseISO } from 'date-fns';
+import { generateCaseSummary } from '../services/geminiService';
 import ConfirmModal from './ConfirmModal';
 import { createNotification } from './NotificationCenter';
 
@@ -81,6 +83,10 @@ export default function CaseManagement({ user }: CaseManagementProps) {
   });
   const [isExpertHistoryOpen, setIsExpertHistoryOpen] = useState(false);
   const [newNote, setNewNote] = useState('');
+
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+
   const [sessionDate, setSessionDate] = useState('');
   const [sessionDecision, setSessionDecision] = useState('');
   const [sessionNextDate, setSessionNextDate] = useState('');
@@ -94,7 +100,33 @@ export default function CaseManagement({ user }: CaseManagementProps) {
   const [clientSearchTerm, setClientSearchTerm] = useState('');
   const [isClientDropdownOpen, setIsClientDropdownOpen] = useState(false);
   const [conflictWarning, setConflictWarning] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
   const clientDropdownRef = useRef<HTMLDivElement>(null);
+
+  const handleEdit = (c: Case) => {
+    setEditingCase(c);
+    setFormData(c);
+    setIsModalOpen(true);
+  };
+
+  const handleGenerateSummary = async (caseData: Case) => {
+    setIsGeneratingSummary(true);
+    setAiSummary(null);
+    try {
+      const summary = await generateCaseSummary(
+        caseData,
+        caseSessions,
+        caseExpertSessions,
+        caseJudgments
+      );
+      setAiSummary(summary);
+    } catch (error) {
+      console.error(error);
+      setAiSummary("حدث خطأ أثناء توليد الملخص. يرجى مراجعة إعدادات الذكاء الاصطناعي.");
+    } finally {
+      setIsGeneratingSummary(false);
+    }
+  };
 
   useEffect(() => {
     if (formData.opponent && formData.opponent.length > 2) {
@@ -551,11 +583,37 @@ export default function CaseManagement({ user }: CaseManagementProps) {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
+        
+        <div className="flex items-center gap-2 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm">
+          <button
+            onClick={() => setViewMode('list')}
+            className={cn(
+              "p-2 rounded-xl transition-all",
+              viewMode === 'list' ? "bg-slate-900 text-white shadow-md text-xs font-bold flex items-center gap-1" : "text-slate-400 hover:bg-slate-50"
+            )}
+            title="عرض القائمة"
+          >
+            <List className="w-4 h-4" />
+            {viewMode === 'list' && <span>قائمة</span>}
+          </button>
+          <button
+            onClick={() => setViewMode('kanban')}
+            className={cn(
+              "p-2 rounded-xl transition-all",
+              viewMode === 'kanban' ? "bg-slate-900 text-white shadow-md text-xs font-bold flex items-center gap-1" : "text-slate-400 hover:bg-slate-50"
+            )}
+            title="عرض اللوحة"
+          >
+            <LayoutGrid className="w-4 h-4" />
+            {viewMode === 'kanban' && <span>لوحة</span>}
+          </button>
+        </div>
       </div>
 
-      {/* Cases List */}
-      <div className="grid grid-cols-1 gap-4">
-        {filteredCases.map((c) => {
+      {/* Cases Content */}
+      {viewMode === 'list' ? (
+        <div className="grid grid-cols-1 gap-4">
+          {filteredCases.map((c) => {
           const config = STATUS_MAP[c.status];
           const Icon = config.icon;
           const isHighlighted = c.id === highlightedId;
@@ -674,7 +732,111 @@ export default function CaseManagement({ user }: CaseManagementProps) {
             </motion.div>
           );
         })}
+        {filteredCases.length === 0 && (
+          <div className="py-24 text-center bg-white rounded-3xl border-2 border-dashed border-slate-200">
+            <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Search className="w-8 h-8 text-slate-300" />
+            </div>
+            <h3 className="text-xl font-bold text-slate-900 mb-2">لا توجد قضايا تطابق بحثك</h3>
+            <p className="text-slate-500 font-medium">جرب تغيير معايير البحث أو إضافة قضية جديدة.</p>
+          </div>
+        )}
       </div>
+      ) : (
+        <div className="flex gap-6 h-[calc(100vh-320px)] overflow-x-auto pb-6 scrollbar-hide">
+          {(Object.keys(STATUS_MAP) as CaseStatus[]).map((statusKey) => {
+            const statusInfo = STATUS_MAP[statusKey];
+            const casesInColumn = filteredCases.filter(c => c.status === statusKey);
+            return (
+              <div key={statusKey} className="flex flex-col w-80 shrink-0 bg-slate-50/50 rounded-[32px] border border-slate-200/60 p-5">
+                <div className="flex items-center justify-between mb-6 px-2">
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "w-2.5 h-2.5 rounded-full ring-4 ring-white shadow-sm",
+                      statusInfo.color === 'blue' ? "bg-blue-500" :
+                      statusInfo.color === 'indigo' ? "bg-indigo-500" :
+                      statusInfo.color === 'amber' ? "bg-amber-500" :
+                      "bg-emerald-500"
+                    )} />
+                    <h3 className="font-black text-slate-900 text-sm">{statusInfo.label}</h3>
+                    <span className="bg-white px-2.5 py-0.5 rounded-full border border-slate-200 text-[10px] font-black text-slate-500 shadow-sm">
+                      {casesInColumn.length}
+                    </span>
+                  </div>
+                  <button className="p-1.5 hover:bg-white rounded-xl transition-all text-slate-400">
+                    <MoreHorizontal className="w-4 h-4" />
+                  </button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto space-y-4 pr-1 scrollbar-hide">
+                  {casesInColumn.map((c) => (
+                    <motion.div
+                      key={c.id}
+                      layoutId={c.id}
+                      whileHover={{ y: -4, boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
+                      onClick={() => setSelectedCaseDetails(c)}
+                      className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm cursor-pointer group hover:border-indigo-200 transition-colors"
+                    >
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="px-2.5 py-1 bg-slate-50 text-slate-500 rounded-lg text-[9px] font-black uppercase tracking-wider group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors">
+                          {c.caseType}
+                        </div>
+                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                          {isLawyer && (
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); handleEdit(c); }}
+                              className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <h4 className="font-black text-slate-900 mb-1 group-hover:text-indigo-600 transition-colors truncate">{c.caseNumber}</h4>
+                      <p className="text-xs text-slate-500 font-bold truncate mb-5">{c.clientName}</p>
+                      
+                      <div className="flex items-center justify-between pt-4 border-t border-slate-50">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[10px] font-black text-slate-400">
+                            {c.clientName.charAt(0)}
+                          </div>
+                          {c.tag && (
+                            <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg">#{c.tag}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 text-slate-300">
+                          {c.autoNumber && <Zap className="w-3.5 h-3.5" />}
+                          <FileText className="w-3.5 h-3.5" />
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                  {casesInColumn.length === 0 && (
+                    <div className="py-16 border-2 border-dashed border-slate-200/50 rounded-2xl flex flex-col items-center justify-center grayscale opacity-30">
+                      <Briefcase className="w-8 h-8 text-slate-300 mb-2" />
+                      <p className="text-[10px] font-black text-slate-400 uppercase">لا يوجد قضايا</p>
+                    </div>
+                  )}
+                </div>
+                
+                {statusKey === 'pre-filing' && isLawyer && (
+                  <button 
+                    onClick={() => {
+                      setEditingCase(null);
+                      setFormData({ clientId: '', status: 'pre-filing', tag: '' });
+                      setIsModalOpen(true);
+                    }}
+                    className="mt-6 w-full py-3 bg-white border-2 border-dashed border-slate-200 rounded-2xl text-xs font-black text-slate-400 hover:border-indigo-200 hover:text-indigo-600 transition-all flex items-center justify-center gap-2 group shadow-sm active:scale-95"
+                  >
+                    <Plus className="w-4 h-4 group-hover:rotate-90 transition-transform" />
+                    إضافة قضية جديدة
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Print-only Case Details Section */}
       {selectedCaseDetails && (
@@ -1178,7 +1340,10 @@ export default function CaseManagement({ user }: CaseManagementProps) {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setSelectedCaseDetails(null)}
+              onClick={() => {
+                setSelectedCaseDetails(null);
+                setAiSummary(null);
+              }}
               className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
             />
             <motion.div
@@ -1206,19 +1371,103 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                 </div>
                 <div className="flex items-center gap-2">
                   <button 
+                    onClick={() => handleGenerateSummary(selectedCaseDetails)}
+                    disabled={isGeneratingSummary}
+                    className="flex items-center gap-2 bg-indigo-50 text-indigo-700 px-4 py-2 rounded-xl font-bold text-sm hover:bg-indigo-100 transition-all shadow-sm border border-indigo-100"
+                  >
+                    <Sparkles className={cn("w-4 h-4", isGeneratingSummary && "animate-pulse")} />
+                    <span>{isGeneratingSummary ? 'جاري التحليل...' : 'تحليل ذكي (AI)'}</span>
+                  </button>
+                  <button 
                     onClick={() => window.print()}
                     className="flex items-center gap-2 bg-slate-100 text-slate-700 px-4 py-2 rounded-xl font-bold text-sm hover:bg-slate-200 transition-all shadow-sm"
                   >
                     <Printer className="w-4 h-4" />
                     <span>طباعة التفاصيل</span>
                   </button>
-                  <button onClick={() => setSelectedCaseDetails(null)} className="p-2 hover:bg-white rounded-xl transition-all">
+                  <button onClick={() => {
+                    setSelectedCaseDetails(null);
+                    setAiSummary(null);
+                  }} className="p-2 hover:bg-white rounded-xl transition-all">
                     <X className="w-6 h-6 text-slate-400" />
                   </button>
                 </div>
               </div>
 
               <div className="flex-1 overflow-y-auto p-8 space-y-8">
+                {/* AI Summary Section */}
+                <AnimatePresence>
+                  {aiSummary && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="bg-indigo-50/50 border border-indigo-100 rounded-[32px] p-8 shadow-sm relative overflow-hidden"
+                    >
+                      <div className="absolute top-0 right-0 p-8 opacity-5">
+                        <Sparkles className="w-32 h-32 text-indigo-600" />
+                      </div>
+                      <div className="relative">
+                        <div className="flex items-center justify-between mb-6">
+                          <h3 className="text-lg font-black text-indigo-900 flex items-center gap-2">
+                            <Zap className="w-6 h-6" />
+                            التحليل القانوني الذكي (AI Analysis)
+                          </h3>
+                          <button 
+                            onClick={() => handleGenerateSummary(selectedCaseDetails)}
+                            className="p-2 hover:bg-indigo-100 rounded-xl transition-all text-indigo-600"
+                            title="إعادة التوليد"
+                          >
+                            <RefreshCw className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <div className="prose prose-slate prose-indigo max-w-none prose-sm font-medium leading-relaxed text-slate-700">
+                          <Markdown>{aiSummary}</Markdown>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Omission Detector Warning */}
+                {(() => {
+                  const today = new Date().toISOString().split('T')[0];
+                  const omittedReg = caseSessions.filter(s => {
+                    const sDate = s.date?.split('T')[0];
+                    return sDate && sDate < today && !s.decision;
+                  });
+                  const omittedExp = caseExpertSessions.filter(s => {
+                    const sDate = s.date?.split('T')[0];
+                    return sDate && sDate < today && !s.decision && s.status === 'pending' && !s.isRelayed;
+                  });
+                  const totalOmitted = omittedReg.length + omittedExp.length;
+
+                  if (totalOmitted === 0) return null;
+
+                  return (
+                    <motion.div 
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="bg-red-50 border border-red-100 rounded-3xl p-6 flex flex-col md:flex-row items-center justify-between gap-6"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center text-red-600 animate-pulse">
+                          <AlertCircle className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <h4 className="text-lg font-black text-red-900">تنبيه كاشف السهو</h4>
+                          <p className="text-sm font-bold text-red-700/80">هناك {totalOmitted} جلسات فائتة لم يتم ترحيل قراراتها لهذه القضية.</p>
+                        </div>
+                      </div>
+                      <button 
+                         onClick={() => navigate('/sessions?tab=omitted')}
+                         className="px-6 py-2 bg-red-600 text-white rounded-xl text-xs font-black shadow-lg shadow-red-100 hover:bg-red-700 transition-all"
+                      >
+                        معالجة السهو الآن
+                      </button>
+                    </motion.div>
+                  );
+                })()}
+
                 {/* Summary Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                   <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">

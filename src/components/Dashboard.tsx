@@ -278,7 +278,7 @@ export default function Dashboard({ user }: DashboardProps) {
       const caseItem = cases.find(c => c.id === s.caseId);
       const sDateStr = s.date?.split('T')[0];
       if (!sDateStr) return false;
-      return sDateStr < today && (!s.decision || s.decision === '') && caseItem?.status === 'active';
+      return sDateStr < today && (!s.decision || s.decision === '') && caseItem?.status !== 'archive';
     });
 
     // Check expert sessions
@@ -288,7 +288,7 @@ export default function Dashboard({ user }: DashboardProps) {
       if (!sDateStr) return false;
       const hasDecision = s.decision && s.decision !== '';
       const isPending = s.status === 'pending';
-      return sDateStr < today && !hasDecision && isPending && caseItem?.status === 'active';
+      return sDateStr < today && !hasDecision && isPending && !s.isRelayed && caseItem?.status !== 'archive';
     });
 
     const combinedOmitted = [...omittedRegular, ...omittedExpert];
@@ -384,6 +384,48 @@ export default function Dashboard({ user }: DashboardProps) {
           </div>
         </div>
       </div>
+
+      {/* Urgent Actions / Omission Detector */}
+      {urgentActions.length > 0 && (
+        <motion.div 
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="bg-red-50 border-r-4 border-red-500 p-6 rounded-2xl shadow-sm overflow-hidden relative group"
+        >
+          <div className="absolute top-0 left-0 p-4 opacity-5 group-hover:scale-110 transition-transform">
+            <AlertTriangle className="w-24 h-24 text-red-600" />
+          </div>
+          <div className="relative flex flex-col md:flex-row items-center justify-between gap-6">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center text-red-600 animate-pulse">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-red-900">تنبيه كاشف السهو والإجراءات العاجلة</h3>
+                <p className="text-sm font-bold text-red-700/80">لديك {urgentActions.length} إجراءات معلقة تتطلب التدخل الفوري</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              {urgentActions.map((action) => (
+                <button
+                  key={action.id}
+                  onClick={() => navigate(action.link)}
+                  className="bg-white border border-red-100 px-4 py-2 rounded-xl text-[10px] font-black text-red-600 hover:bg-red-600 hover:text-white transition-all shadow-sm flex items-center gap-2"
+                >
+                  <Zap className="w-3 h-3" />
+                  {action.title}
+                </button>
+              ))}
+              <button
+                onClick={() => navigate('/sessions?tab=omitted')}
+                className="bg-red-600 text-white px-6 py-2 rounded-xl text-xs font-black shadow-lg shadow-red-100 hover:bg-red-700 transition-all"
+              >
+                فتح كاشف السهو
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
