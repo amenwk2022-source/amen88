@@ -276,19 +276,21 @@ export default function Dashboard({ user }: DashboardProps) {
     // Check regular sessions
     const omittedRegular = allSessions.filter(s => {
       const caseItem = cases.find(c => c.id === s.caseId);
+      if (!caseItem) return false;
       const sDateStr = s.date?.split('T')[0];
       if (!sDateStr) return false;
-      return sDateStr < today && (!s.decision || s.decision === '') && caseItem?.status !== 'archive';
+      return sDateStr < today && (!s.decision || s.decision === '') && caseItem.status !== 'archive';
     });
 
     // Check expert sessions
     const omittedExpert = allExpertSessions.filter(s => {
       const caseItem = cases.find(c => c.id === s.caseId);
+      if (!caseItem) return false;
       const sDateStr = s.date?.split('T')[0];
       if (!sDateStr) return false;
       const hasDecision = s.decision && s.decision !== '';
       const isPending = s.status === 'pending';
-      return sDateStr < today && !hasDecision && isPending && !s.isRelayed && caseItem?.status !== 'archive';
+      return sDateStr < today && !hasDecision && isPending && !s.isRelayed && caseItem.status !== 'archive';
     });
 
     const combinedOmitted = [...omittedRegular, ...omittedExpert];

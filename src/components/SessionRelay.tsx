@@ -464,12 +464,9 @@ export default function SessionRelay({ user }: SessionRelayProps) {
     }).length,
     omitted: allSessionsWithCase.filter(s => {
       if (!s.date) return false;
-      return s.date.split('T')[0] < realTodayStr && !s.decision && s.caseInfo?.status === 'active';
-    }).length + expertSessions.filter(s => {
-      if (!s.date) return false;
-      const caseItem = cases.find(c => c.id === s.caseId);
-      return s.date.split('T')[0] < realTodayStr && s.status === 'pending' && !s.isRelayed && (!s.decision || s.decision === '') && caseItem?.status !== 'archive';
-    }).length,
+      const courtMatch = selectedCourt === 'ALL' || s.caseInfo?.court === selectedCourt;
+      return s.date.split('T')[0] < realTodayStr && !s.decision && s.caseInfo?.status !== 'archive' && courtMatch;
+    }).length + omittedExpertSessions.length,
   };
 
     const safeFormat = (dateStr: string | undefined, formatStr: string) => {
@@ -733,7 +730,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 print:divide-y-0">
-              {filteredSessions.length > 0 ? (
+              {filteredSessions.length > 0 &&
                 filteredSessions.map((session, index) => (
                   <motion.tr
                     layout
@@ -877,15 +874,14 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                       </div>
                     </td>
                   </motion.tr>
-                ))
-              ) : (
-                filteredExpertSessions.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className="p-20 text-center text-slate-400 font-bold">
-                      لا توجد جلسات مسجلة لهذا التاريخ
-                    </td>
-                  </tr>
-                )
+                ))}
+
+              {filteredSessions.length === 0 && (activeTab === 'omitted' ? omittedExpertSessions.length === 0 : filteredExpertSessions.length === 0) && (
+                <tr>
+                  <td colSpan={8} className="p-20 text-center text-slate-400 font-bold">
+                    لا توجد جلسات مسجلة لهذا التاريخ
+                  </td>
+                </tr>
               )}
 
               {/* Expert Sessions Section */}
