@@ -48,8 +48,10 @@ export default function CaseManagement({ user }: CaseManagementProps) {
   const [editingCase, setEditingCase] = useState<Case | null>(null);
   const [isSessionModalOpen, setIsSessionModalOpen] = useState(false);
   const [isJudgmentModalOpen, setIsJudgmentModalOpen] = useState(false);
+  const [isAppealModalOpen, setIsAppealModalOpen] = useState(false);
   const [selectedCaseForSession, setSelectedCaseForSession] = useState<Case | null>(null);
   const [selectedCaseForJudgment, setSelectedCaseForJudgment] = useState<Case | null>(null);
+  const [selectedJudgmentForAppeal, setSelectedJudgmentForAppeal] = useState<Judgment | null>(null);
   const [selectedCaseDetails, setSelectedCaseDetails] = useState<Case | null>(null);
   const [caseSessions, setCaseSessions] = useState<any[]>([]);
   const [caseProcedures, setCaseProcedures] = useState<any[]>([]);
@@ -60,6 +62,12 @@ export default function CaseManagement({ user }: CaseManagementProps) {
   const [caseNotes, setCaseNotes] = useState<{ id: string; text: string; date: string; author: string }[]>([]);
   const [caseTasks, setCaseTasks] = useState<any[]>([]);
   const [systemSettings, setSystemSettings] = useState<SystemSettings | null>(null);
+  const [appealData, setAppealData] = useState({
+    newCourt: '',
+    newCircuit: '',
+    firstSessionDate: '',
+    firstSessionDecision: 'أول جلسة استئناف'
+  });
   const [judgmentData, setJudgmentData] = useState<Partial<Judgment>>({
     date: new Date().toISOString().split('T')[0],
     type: 'initial',
@@ -463,6 +471,54 @@ export default function CaseManagement({ user }: CaseManagementProps) {
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'judgments');
+    }
+  };
+
+  const handleAppeal = async () => {
+    if (!selectedCaseDetails || !selectedJudgmentForAppeal) return;
+    if (!appealData.firstSessionDate) {
+      alert('الرجاء اختيار تاريخ أول جلسة استئناف');
+      return;
+    }
+
+    try {
+      // 1. Update judgment status
+      await updateDoc(doc(db, 'judgments', selectedJudgmentForAppeal.id), {
+        appealStatus: 'appealed',
+        isAppealed: true,
+        updatedAt: new Date().toISOString()
+      });
+
+      // 2. Update case status and info
+      await updateDoc(doc(db, 'cases', selectedCaseDetails.id), {
+        status: 'active',
+        court: appealData.newCourt || selectedCaseDetails.court,
+        circuit: appealData.newCircuit || selectedCaseDetails.circuit,
+        updatedAt: new Date().toISOString()
+      });
+
+      // 3. Create new session for appeal
+      await addDoc(collection(db, 'sessions'), {
+        caseId: selectedCaseDetails.id,
+        date: appealData.firstSessionDate,
+        decision: appealData.firstSessionDecision,
+        lawyerId: selectedCaseDetails.lawyerId || '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+
+      setIsAppealModalOpen(false);
+      setSelectedJudgmentForAppeal(null);
+      setAppealData({
+        newCourt: '',
+        newCircuit: '',
+        firstSessionDate: '',
+        firstSessionDecision: 'أول جلسة استئناف'
+      });
+
+      // Show success notification or just let real-time update handle it
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'appeal');
     }
   };
 
@@ -1554,6 +1610,25 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                                event.timelineType === 'procedure' ? event.notes : 
                                event.timelineType === 'expert' ? event.decision : event.result}
                             </p>
+                            {event.timelineType === 'judgment' && event.type === 'initial' && !event.isAppealed && isLawyer && (
+                              <div className="mt-4 flex items-center justify-end">
+                                <button
+                                  onClick={() => {
+                                    setSelectedJudgmentForAppeal(event);
+                                    setAppealData({
+                                      ...appealData,
+                                      newCourt: selectedCaseDetails?.court || '',
+                                      newCircuit: selectedCaseDetails?.circuit || ''
+                                    });
+                                    setIsAppealModalOpen(true);
+                                  }}
+                                  className="flex items-center gap-2 bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl text-xs font-black hover:bg-indigo-600 hover:text-white transition-all shadow-sm border border-indigo-100"
+                                >
+                                  <ArrowLeftRight className="w-3.5 h-3.5" />
+                                  استئناف القضية الآن
+                                </button>
+                              </div>
+                            )}
                             {event.nextDate && (
                               <div className="mt-3 pt-3 border-t border-slate-50 flex items-center gap-2">
                                 <CalendarPlus className="w-3 h-3 text-indigo-600" />
@@ -1884,6 +1959,106 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                 >
                   <Gavel className="w-5 h-5" />
                   حفظ الحكم وإغلاق القضية
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Appeal Case Modal */}
+      <AnimatePresence>
+        {isAppealModalOpen && selectedJudgmentForAppeal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-[40px] shadow-2xl w-full max-w-xl overflow-hidden border border-slate-100"
+            >
+              <div className="p-8 border-b border-slate-50 flex items-center justify-between bg-indigo-50/30">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-indigo-100 rounded-2xl text-indigo-600">
+                    <ArrowLeftRight className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black text-slate-900">تسجيل استئناف القضية</h2>
+                    <p className="text-xs text-slate-500 font-bold mt-0.5">القرار السابق: {selectedJudgmentForAppeal.result.substring(0, 50)}...</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setIsAppealModalOpen(false)}
+                  className="p-2 hover:bg-white rounded-xl transition-colors shadow-sm"
+                >
+                  <X className="w-5 h-5 text-slate-400" />
+                </button>
+              </div>
+
+              <div className="p-8 space-y-6">
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block pr-1">المحكمة الجديدة (الاستئناف)</label>
+                    <select
+                      value={appealData.newCourt}
+                      onChange={(e) => setAppealData({ ...appealData, newCourt: e.target.value })}
+                      className="w-full p-4 bg-slate-50 border-2 border-transparent rounded-2xl focus:border-indigo-500 focus:bg-white transition-all outline-none font-bold text-sm"
+                    >
+                      <option value="">اختر المحكمة...</option>
+                      {systemSettings?.courtNames.map(court => (
+                        <option key={court} value={court}>{court}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block pr-1">الدائرة الجديدة</label>
+                    <input
+                      type="text"
+                      placeholder="رقم الدائرة..."
+                      value={appealData.newCircuit}
+                      onChange={(e) => setAppealData({ ...appealData, newCircuit: e.target.value })}
+                      className="w-full p-4 bg-slate-50 border-2 border-transparent rounded-2xl focus:border-indigo-500 focus:bg-white transition-all outline-none font-bold text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-4 pt-4 border-t border-slate-50">
+                  <h4 className="text-xs font-black text-indigo-600 uppercase tracking-widest">تحديد موعد أول جلسة استئناف</h4>
+                  
+                  <div className="grid grid-cols-1 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block pr-1">تاريخ الجلسة</label>
+                      <input
+                        type="date"
+                        value={appealData.firstSessionDate}
+                        onChange={(e) => setAppealData({ ...appealData, firstSessionDate: e.target.value })}
+                        className="w-full p-4 bg-slate-50 border-2 border-transparent rounded-2xl focus:border-indigo-500 focus:bg-white transition-all outline-none font-bold text-sm"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block pr-1">وصف الإجراء</label>
+                      <input
+                        type="text"
+                        value={appealData.firstSessionDecision}
+                        onChange={(e) => setAppealData({ ...appealData, firstSessionDecision: e.target.value })}
+                        className="w-full p-4 bg-slate-50 border-2 border-transparent rounded-2xl focus:border-indigo-500 focus:bg-white transition-all outline-none font-bold text-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 flex gap-3">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                  <p className="text-[10px] font-bold text-amber-700 leading-relaxed">
+                    ملاحظة: سيتم تحديث حالة القضية إلى "متداولة" مرة أخرى، وسيتم تغيير بيانات المحكمة والدائرة، كما سيتم تسجيل أول جلسة استئناف تلقائياً في السجل.
+                  </p>
+                </div>
+
+                <button
+                  onClick={handleAppeal}
+                  className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black text-sm shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-3"
+                >
+                  <Check className="w-5 h-5" />
+                  تأكيد الاستئناف وفتح الجلسات
                 </button>
               </div>
             </motion.div>
