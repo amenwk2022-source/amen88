@@ -149,6 +149,26 @@ export default function Tasks({ user }: TasksProps) {
     const newStatus = task.status === 'completed' ? 'pending' : 'completed';
     try {
       await updateDoc(doc(db, 'tasks', task.id), { status: newStatus });
+
+      // If task is completed and has a linked case, record it in case procedures
+      if (newStatus === 'completed' && task.caseId) {
+        await addDoc(collection(db, 'procedures'), {
+          caseId: task.caseId,
+          title: `تم تنفيذ مهمة: ${task.title}`,
+          date: new Date().toISOString().split('T')[0], // Use simplified date for procedures if standard
+          notes: task.description || 'تم إنجاز المهمة المحددة.',
+          lawyerId: user.uid,
+          createdAt: new Date().toISOString()
+        });
+
+        // Also add a case note if preferred, but procedures are better for timeline
+        await addDoc(collection(db, 'caseNotes'), {
+          caseId: task.caseId,
+          text: `[إجراء تلقائي] تم إكمال المهمة: ${task.title}`,
+          date: new Date().toISOString(),
+          author: 'نظام المهام'
+        });
+      }
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'tasks');
     }

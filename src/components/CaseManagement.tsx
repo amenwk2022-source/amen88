@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, where, getDocs } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { Plus, Search, Filter, Briefcase, Scale, Gavel, Archive, MoreVertical, Trash2, Edit2, X, Check, ArrowLeftRight, CalendarPlus, FileCheck, DollarSign, Clock, FileText, Eye, CheckCircle2, Printer, Users, AlertTriangle, AlertCircle, Sparkles, Zap, RefreshCw, LayoutGrid, List, MoreHorizontal } from 'lucide-react';
+import { Plus, Search, Filter, Briefcase, Scale, Gavel, Archive, MoreVertical, Trash2, Edit2, X, Check, ArrowLeftRight, CalendarPlus, FileCheck, DollarSign, Clock, FileText, Eye, CheckCircle2, Circle, Printer, Users, AlertTriangle, AlertCircle, Sparkles, Zap, RefreshCw, LayoutGrid, List, MoreHorizontal } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import { Case, CaseStatus, Client, Judgment, UserProfile, SystemSettings } from '../types';
@@ -519,6 +519,36 @@ export default function CaseManagement({ user }: CaseManagementProps) {
       // Show success notification or just let real-time update handle it
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'appeal');
+    }
+  };
+
+  const toggleTaskStatus = async (task: any) => {
+    if (!isLawyer) return;
+    const newStatus = task.status === 'completed' ? 'pending' : 'completed';
+    try {
+      await updateDoc(doc(db, 'tasks', task.id), { status: newStatus });
+      
+      if (newStatus === 'completed') {
+        // Record in procedures
+        await addDoc(collection(db, 'procedures'), {
+          caseId: task.caseId,
+          title: `تم تنفيذ مهمة: ${task.title}`,
+          date: new Date().toISOString().split('T')[0],
+          notes: task.description || 'تم إنجاز المهمة من خلال تفاصيل القضية.',
+          lawyerId: user.uid,
+          createdAt: new Date().toISOString()
+        });
+
+        // Add case note
+        await addDoc(collection(db, 'caseNotes'), {
+          caseId: task.caseId,
+          text: `[إجراء تلقائي] تم إكمال المهمة: ${task.title}`,
+          date: new Date().toISOString(),
+          author: 'نظام المهام'
+        });
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'tasks');
     }
   };
 
@@ -1741,10 +1771,16 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                         {caseTasks.map((task) => (
                           <div key={task.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
                             <div className="flex items-center gap-3">
-                              <div className={cn(
-                                "w-2 h-2 rounded-full",
-                                task.status === 'completed' ? "bg-emerald-500" : "bg-amber-500"
-                              )} />
+                              <button 
+                                onClick={() => toggleTaskStatus(task)}
+                                disabled={!isLawyer}
+                                className={cn(
+                                  "p-1 rounded-lg transition-all",
+                                  task.status === 'completed' ? "text-emerald-600" : "text-slate-400 hover:text-indigo-600"
+                                )}
+                              >
+                                {task.status === 'completed' ? <CheckCircle2 className="w-5 h-5" /> : <Circle className="w-5 h-5" />}
+                              </button>
                               <span className={cn("text-sm font-bold", task.status === 'completed' ? "text-slate-400 line-through" : "text-slate-700")}>
                                 {task.title}
                               </span>
