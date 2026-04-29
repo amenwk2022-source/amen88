@@ -87,7 +87,9 @@ export default function CaseManagement({ user }: CaseManagementProps) {
     opponent: '',
     caseType: '',
     status: 'pre-filing',
-    clientPosition: 'plaintiff'
+    clientPosition: 'plaintiff',
+    initialSessionDate: '',
+    initialSessionDecision: ''
   });
   const [isExpertHistoryOpen, setIsExpertHistoryOpen] = useState(false);
   const [newNote, setNewNote] = useState('');
@@ -342,14 +344,32 @@ export default function CaseManagement({ user }: CaseManagementProps) {
       if (editingCase) {
         await updateDoc(doc(db, 'cases', editingCase.id), data);
       } else {
-        await addDoc(collection(db, 'cases'), {
+        const caseRef = await addDoc(collection(db, 'cases'), {
           ...data,
           createdAt: new Date().toISOString()
         });
+
+        // Add initial session if provided for active cases
+        if (formData.status === 'active' && formData.initialSessionDate) {
+          await addDoc(collection(db, 'sessions'), {
+            caseId: caseRef.id,
+            date: formData.initialSessionDate,
+            decision: formData.initialSessionDecision || '',
+            lawyerId: user.uid,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
+        }
       }
       setIsModalOpen(false);
       setEditingCase(null);
-      setFormData({ clientId: '', status: 'pre-filing', clientPosition: 'plaintiff' });
+      setFormData({ 
+        clientId: '', 
+        status: 'pre-filing', 
+        clientPosition: 'plaintiff',
+        initialSessionDate: '',
+        initialSessionDecision: ''
+      });
     } catch (error) {
       console.error('Error saving case:', error);
     }
@@ -1333,6 +1353,48 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                     </select>
                   </div>
                 </div>
+
+                <AnimatePresence>
+                  {formData.status === 'active' && !editingCase && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="p-6 bg-indigo-50/50 rounded-3xl border border-indigo-100 space-y-4 mb-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="p-1.5 bg-indigo-100 rounded-lg text-indigo-600">
+                            <CalendarPlus className="w-4 h-4" />
+                          </div>
+                          <h4 className="text-xs font-black text-indigo-700 uppercase tracking-widest">بيانات الجلسة الأولى (اختياري)</h4>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block pr-1">تاريخ الجلسة</label>
+                            <input
+                              type="date"
+                              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                              value={formData.initialSessionDate}
+                              onChange={(e) => setFormData({ ...formData, initialSessionDate: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block pr-1">القرار / الإجراء</label>
+                            <input
+                              type="text"
+                              placeholder="مثال: تقديم مذكرات..."
+                              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                              value={formData.initialSessionDecision}
+                              onChange={(e) => setFormData({ ...formData, initialSessionDecision: e.target.value })}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
                 <div className="pt-4 flex gap-4">
                   <button
                     type="submit"

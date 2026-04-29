@@ -15,7 +15,8 @@ import {
   User,
   Briefcase,
   X,
-  Check
+  Check,
+  Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Task, UserProfile, Case } from '../types';
@@ -50,7 +51,9 @@ export default function Tasks({ user }: TasksProps) {
     dueDate: new Date().toISOString().split('T')[0],
     status: 'pending',
     priority: 'medium',
-    caseId: ''
+    caseId: '',
+    isSighaType: false,
+    subSteps: []
   });
 
   useEffect(() => {
@@ -127,7 +130,9 @@ export default function Tasks({ user }: TasksProps) {
         dueDate: new Date().toISOString().split('T')[0],
         status: 'pending',
         priority: 'medium',
-        caseId: ''
+        caseId: '',
+        isSighaType: false,
+        subSteps: []
       });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'tasks');
@@ -155,13 +160,12 @@ export default function Tasks({ user }: TasksProps) {
         await addDoc(collection(db, 'procedures'), {
           caseId: task.caseId,
           title: `تم تنفيذ مهمة: ${task.title}`,
-          date: new Date().toISOString().split('T')[0], // Use simplified date for procedures if standard
+          date: new Date().toISOString().split('T')[0],
           notes: task.description || 'تم إنجاز المهمة المحددة.',
           lawyerId: user.uid,
           createdAt: new Date().toISOString()
         });
 
-        // Also add a case note if preferred, but procedures are better for timeline
         await addDoc(collection(db, 'caseNotes'), {
           caseId: task.caseId,
           text: `[إجراء تلقائي] تم إكمال المهمة: ${task.title}`,
@@ -174,12 +178,59 @@ export default function Tasks({ user }: TasksProps) {
     }
   };
 
+  const toggleSubStep = async (task: Task, subStepId: string) => {
+    if (!task.subSteps) return;
+
+    const newSubSteps = task.subSteps.map(step => {
+      if (step.id === subStepId) {
+        return {
+          ...step,
+          status: step.status === 'completed' ? 'pending' as const : 'completed' as const,
+          completedAt: step.status === 'completed' ? undefined : new Date().toISOString()
+        };
+      }
+      return step;
+    });
+
+    const allCompleted = newSubSteps.every(step => step.status === 'completed');
+    const newStatus = allCompleted ? 'completed' : 'in-progress';
+
+    try {
+      await updateDoc(doc(db, 'tasks', task.id), {
+        subSteps: newSubSteps,
+        status: newStatus
+      });
+
+      // Record logic if completed
+      if (allCompleted && task.caseId && task.status !== 'completed') {
+        const subStepsSummary = newSubSteps.map(s => `${s.title} (${s.completedAt ? format(parseISO(s.completedAt), 'dd/MM/yyyy') : '---'})`).join(' - ');
+        
+        await addDoc(collection(db, 'procedures'), {
+          caseId: task.caseId,
+          title: `إتمام مهمة الصيغة التنفيذية: ${task.title}`,
+          date: new Date().toISOString().split('T')[0],
+          notes: `تم إنجاز كافة الخطوات: ${subStepsSummary}`,
+          lawyerId: user.uid,
+          createdAt: new Date().toISOString()
+        });
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'tasks');
+    }
+  };
+
   const isLawyer = user.role === 'admin' || user.role === 'lawyer';
 
   const filteredTasks = tasks.filter(t => {
     const matchesSearch = t.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
                          t.description?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || t.status === statusFilter;
+    
+    // Hide completed tasks in "all" view to "disappear" after completion
+    const isCompleted = t.status === 'completed';
+    const matchesStatus = statusFilter === 'all' 
+      ? !isCompleted 
+      : t.status === statusFilter;
+    
     const matchesCase = cases.some(c => c.id === t.caseId);
     return matchesSearch && matchesStatus && matchesCase;
   });
@@ -211,7 +262,9 @@ export default function Tasks({ user }: TasksProps) {
                 dueDate: new Date().toISOString().split('T')[0],
                 status: 'pending',
                 priority: 'medium',
-                caseId: ''
+                caseId: '',
+                isSighaType: false,
+                subSteps: []
               });
               setIsModalOpen(true);
             }}
@@ -271,29 +324,35 @@ export default function Tasks({ user }: TasksProps) {
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.9 }}
                 className={cn(
-                  "bg-white p-6 rounded-2xl border transition-all group relative overflow-hidden",
+                  "bg-white p-6 rounded-3xl border transition-all group relative overflow-hidden flex flex-col",
                   task.status === 'completed' ? "border-slate-100 opacity-75" : "border-slate-200 hover:shadow-xl hover:border-indigo-200"
                 )}
               >
                 {/* Priority Indicator */}
                 <div className={cn(
-                  "absolute top-0 right-0 w-1 h-full",
+                  "absolute top-0 right-0 w-1.5 h-full",
                   task.priority === 'high' ? "bg-red-500" : 
                   task.priority === 'medium' ? "bg-amber-500" : "bg-blue-500"
                 )} />
 
                 <div className="flex items-start justify-between mb-4">
-                  <button 
-                    onClick={() => toggleStatus(task)}
-                    disabled={!isLawyer}
-                    className={cn(
-                      "p-2 rounded-xl transition-all",
-                      task.status === 'completed' ? "bg-emerald-50 text-emerald-600" : "bg-slate-50 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600",
-                      !isLawyer && "cursor-default"
-                    )}
-                  >
-                    {task.status === 'completed' ? <CheckCircle2 className="w-6 h-6" /> : <Circle className="w-6 h-6" />}
-                  </button>
+                  {!task.isSighaType ? (
+                    <button 
+                      onClick={() => toggleStatus(task)}
+                      disabled={!isLawyer}
+                      className={cn(
+                        "p-2 rounded-xl transition-all",
+                        task.status === 'completed' ? "bg-emerald-50 text-emerald-600" : "bg-slate-50 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600",
+                        !isLawyer && "cursor-default"
+                      )}
+                    >
+                      {task.status === 'completed' ? <CheckCircle2 className="w-6 h-6" /> : <Circle className="w-6 h-6" />}
+                    </button>
+                  ) : (
+                    <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                      <Sparkles className="w-6 h-6" />
+                    </div>
+                  )}
                   {isLawyer && (
                     <div className="flex gap-1">
                       <button 
@@ -320,18 +379,88 @@ export default function Tasks({ user }: TasksProps) {
                   )}
                 </div>
 
-                <h3 className={cn(
-                  "text-lg font-black mb-2 transition-all",
-                  task.status === 'completed' ? "text-slate-400 line-through" : "text-slate-900"
-                )}>
-                  {task.title}
-                </h3>
+                <div className="mb-4">
+                  <h3 className={cn(
+                    "text-lg font-black mb-1 transition-all",
+                    task.status === 'completed' ? "text-slate-400 line-through" : "text-slate-900"
+                  )}>
+                    {task.title}
+                  </h3>
+                  {task.isSighaType && (
+                    <span className="text-[10px] font-black bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-lg">صيغة تنفيذية</span>
+                  )}
+                </div>
                 
                 {task.description && (
-                  <p className="text-sm text-slate-500 font-medium mb-4 line-clamp-2">{task.description}</p>
+                  <p className="text-sm text-slate-500 font-medium mb-4">{task.description}</p>
                 )}
 
-                <div className="space-y-3 pt-4 border-t border-slate-50">
+                {/* Sub-steps for Sigha Type */}
+                {task.isSighaType && task.subSteps && (
+                  <div className="mb-6 space-y-2 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">خطوات التنفيذ</h4>
+                    {task.subSteps.map((step) => (
+                      <div key={step.id} className="flex items-center justify-between gap-3 group/step">
+                        <button
+                          onClick={() => toggleSubStep(task, step.id)}
+                          disabled={!isLawyer}
+                          className="flex items-center gap-3 flex-1 text-right"
+                        >
+                          <div className={cn(
+                            "w-5 h-5 rounded-lg border-2 flex items-center justify-center shrink-0 transition-all",
+                            step.status === 'completed' ? "bg-emerald-500 border-emerald-500 text-white" : "border-slate-300 bg-white"
+                          )}>
+                            {step.status === 'completed' && <Check className="w-3.5 h-3.5 stroke-[4px]" />}
+                          </div>
+                          <div className="flex-1">
+                            <span className={cn(
+                              "text-xs font-bold block",
+                              step.status === 'completed' ? "text-slate-400 line-through" : "text-slate-700"
+                            )}>
+                              {step.title}
+                            </span>
+                            {step.status === 'completed' && step.completedAt && (
+                              <span className="text-[9px] font-black text-emerald-600">
+                                تم في: {format(parseISO(step.completedAt), 'dd/MM/yyyy HH:mm')}
+                              </span>
+                            )}
+                            {step.status !== 'completed' && (
+                              <span className="text-[9px] font-black text-slate-400">لم تتم</span>
+                            )}
+                          </div>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Case Info Tags */}
+                {relatedCase && (
+                  <div className="mb-6 grid grid-cols-2 gap-2">
+                    <div className="bg-slate-50 p-2 rounded-xl">
+                      <div className="text-[9px] font-black text-slate-400 uppercase">المدعي</div>
+                      <div className="text-[10px] font-bold text-slate-700 truncate">
+                        {relatedCase.clientPosition === 'plaintiff' ? relatedCase.clientName : relatedCase.opponent}
+                      </div>
+                    </div>
+                    <div className="bg-slate-50 p-2 rounded-xl">
+                      <div className="text-[9px] font-black text-slate-400 uppercase">المدعى عليه</div>
+                      <div className="text-[10px] font-bold text-slate-700 truncate">
+                        {relatedCase.clientPosition === 'defendant' ? relatedCase.clientName : relatedCase.opponent}
+                      </div>
+                    </div>
+                    <div className="bg-slate-50 p-2 rounded-xl">
+                      <div className="text-[9px] font-black text-slate-400 uppercase">المحكمة</div>
+                      <div className="text-[10px] font-bold text-slate-700 truncate">{relatedCase.court || '---'}</div>
+                    </div>
+                    <div className="bg-slate-50 p-2 rounded-xl">
+                      <div className="text-[9px] font-black text-slate-400 uppercase">الرقم الآلي</div>
+                      <div className="text-[10px] font-bold text-indigo-600 truncate">{relatedCase.autoNumber || '---'}</div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-auto space-y-3 pt-4 border-t border-slate-50">
                   <div className="flex items-center justify-between text-xs font-bold">
                     <div className="flex items-center gap-2 text-slate-500">
                       <Clock className={cn("w-4 h-4", isOverdue ? "text-red-500 animate-pulse" : "text-slate-400")} />
@@ -368,7 +497,7 @@ export default function Tasks({ user }: TasksProps) {
                     {relatedCase && (
                       <div className="flex items-center gap-1 text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg">
                         <Briefcase className="w-3 h-3" />
-                        {relatedCase.caseNumber}
+                        رقم: {relatedCase.caseNumber}
                       </div>
                     )}
                   </div>
@@ -430,6 +559,36 @@ export default function Tasks({ user }: TasksProps) {
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   />
+                </div>
+
+                <div className="space-y-4 py-4 border-y border-slate-100">
+                  <label className="flex items-center gap-3 cursor-pointer group">
+                    <div 
+                      onClick={() => {
+                        const isSigha = !formData.isSighaType;
+                        setFormData({ 
+                          ...formData, 
+                          isSighaType: isSigha,
+                          title: isSigha ? 'صيغة تنفيذية' : formData.title,
+                          subSteps: isSigha ? [
+                            { id: '1', title: 'استلام الحكم', status: 'pending' },
+                            { id: '2', title: 'إعلانه', status: 'pending' },
+                            { id: '3', title: 'صيغة', status: 'pending' }
+                          ] : []
+                        });
+                      }}
+                      className={cn(
+                        "w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all",
+                        formData.isSighaType ? "bg-indigo-600 border-indigo-600 text-white" : "border-slate-300"
+                      )}
+                    >
+                      {formData.isSighaType && <Check className="w-4 h-4 stroke-[3px]" />}
+                    </div>
+                    <div>
+                      <span className="text-sm font-bold text-slate-700 block">مهمة صيغة تنفيذية</span>
+                      <span className="text-[10px] text-slate-500 font-bold">تتكون من 3 خطوات تلقائية (استلام، إعلان، صيغة)</span>
+                    </div>
+                  </label>
                 </div>
 
                 <div className="grid grid-cols-2 gap-6">

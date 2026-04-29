@@ -34,6 +34,8 @@ export interface Case {
   tag?: string;
   clientPosition?: 'plaintiff' | 'defendant' | 'appellant' | 'appellee';
   createdAt: string;
+  initialSessionDate?: string;
+  initialSessionDecision?: string;
 }
 
 export interface Session {
@@ -157,6 +159,13 @@ export interface UserNotificationSettings {
   };
 }
 
+export interface TaskSubStep {
+  id: string;
+  title: string;
+  status: 'pending' | 'completed';
+  completedAt?: string;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -167,6 +176,8 @@ export interface Task {
   priority: 'low' | 'medium' | 'high';
   caseId?: string;
   createdAt: string;
+  isSighaType?: boolean;
+  subSteps?: TaskSubStep[];
 }
 
 export interface ConsultationRequest {
