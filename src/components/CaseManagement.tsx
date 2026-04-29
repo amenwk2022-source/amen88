@@ -104,7 +104,9 @@ export default function CaseManagement({ user }: CaseManagementProps) {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [caseToDelete, setCaseToDelete] = useState<string | null>(null);
   const [isSessionDeleteModalOpen, setIsSessionDeleteModalOpen] = useState(false);
+  const [isJudgmentDeleteModalOpen, setIsJudgmentDeleteModalOpen] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
+  const [judgmentToDelete, setJudgmentToDelete] = useState<string | null>(null);
   const [clientSearchTerm, setClientSearchTerm] = useState('');
   const [isClientDropdownOpen, setIsClientDropdownOpen] = useState(false);
   const [conflictWarning, setConflictWarning] = useState<string | null>(null);
@@ -429,6 +431,17 @@ export default function CaseManagement({ user }: CaseManagementProps) {
       setSessionToDelete(null);
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, 'sessions');
+    }
+  };
+
+  const handleDeleteJudgment = async () => {
+    if (user.role === 'client' || !judgmentToDelete) return;
+    try {
+      await deleteDoc(doc(db, 'judgments', judgmentToDelete));
+      setIsJudgmentDeleteModalOpen(false);
+      setJudgmentToDelete(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'judgments');
     }
   };
 
@@ -1055,6 +1068,20 @@ export default function CaseManagement({ user }: CaseManagementProps) {
         cancelLabel="إلغاء"
       />
 
+      {/* Delete Judgment Confirmation Modal */}
+      <ConfirmModal
+        isOpen={isJudgmentDeleteModalOpen}
+        onClose={() => {
+          setIsJudgmentDeleteModalOpen(false);
+          setJudgmentToDelete(null);
+        }}
+        onConfirm={handleDeleteJudgment}
+        title="حذف الحكم"
+        message="هل أنت متأكد من حذف هذا الحكم؟ سيؤدي ذلك لإزالة السجل من الخط الزمني للقضية."
+        confirmLabel="حذف"
+        cancelLabel="إلغاء"
+      />
+
       {/* Add/Edit Modal */}
       <AnimatePresence>
         {isModalOpen && (
@@ -1594,22 +1621,29 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                             <div className="flex items-center justify-between mb-2">
                               <div className="flex items-center gap-2">
                                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{event.timelineDate}</span>
-                                {event.timelineType === 'session' && isLawyer && (
+                                {isLawyer && (event.timelineType === 'session' || event.timelineType === 'judgment') && (
                                   <div className="flex items-center gap-1">
+                                    {event.timelineType === 'session' && (
+                                      <button 
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleEditSession(event);
+                                        }}
+                                        className="p-1 text-slate-400 hover:text-indigo-600 transition-all"
+                                      >
+                                        <Edit2 className="w-3 h-3" />
+                                      </button>
+                                    )}
                                     <button 
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        handleEditSession(event);
-                                      }}
-                                      className="p-1 text-slate-400 hover:text-indigo-600 transition-all"
-                                    >
-                                      <Edit2 className="w-3 h-3" />
-                                    </button>
-                                    <button 
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setSessionToDelete(event.id);
-                                        setIsSessionDeleteModalOpen(true);
+                                        if (event.timelineType === 'session') {
+                                          setSessionToDelete(event.id);
+                                          setIsSessionDeleteModalOpen(true);
+                                        } else if (event.timelineType === 'judgment') {
+                                          setJudgmentToDelete(event.id);
+                                          setIsJudgmentDeleteModalOpen(true);
+                                        }
                                       }}
                                       className="p-1 text-slate-400 hover:text-red-600 transition-all"
                                     >
@@ -1640,7 +1674,7 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                                event.timelineType === 'procedure' ? event.notes : 
                                event.timelineType === 'expert' ? event.decision : event.result}
                             </p>
-                            {event.timelineType === 'judgment' && event.type === 'initial' && !event.isAppealed && isLawyer && (
+                            {event.timelineType === 'judgment' && event.type === 'initial' && !event.isAppealed && event.appealStatus !== 'appealed' && isLawyer && (
                               <div className="mt-4 flex items-center justify-end">
                                 <button
                                   onClick={() => {
@@ -1657,6 +1691,14 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                                   <ArrowLeftRight className="w-3.5 h-3.5" />
                                   استئناف القضية الآن
                                 </button>
+                              </div>
+                            )}
+                            {event.timelineType === 'judgment' && (event.isAppealed || event.appealStatus === 'appealed') && (
+                              <div className="mt-4 flex items-center justify-end">
+                                <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 border border-emerald-100 px-4 py-2 rounded-xl text-xs font-black">
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  قضية مستأنفة
+                                </div>
                               </div>
                             )}
                             {event.nextDate && (
