@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { Plus, Search, MoreVertical, Phone, CreditCard, MapPin, FileText, Trash2, Edit2, X, Check, Printer, Eye, Scale, Clock, Briefcase } from 'lucide-react';
@@ -9,6 +10,8 @@ import { format } from 'date-fns';
 import { arSA } from 'date-fns/locale';
 
 export default function ClientManagement() {
+  const [searchParams] = useSearchParams();
+  const highlightedId = searchParams.get('id');
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -70,8 +73,17 @@ export default function ClientManagement() {
   useEffect(() => {
     const q = query(collection(db, 'clients'), orderBy('name', 'asc'));
     const unsub = onSnapshot(q, (snapshot) => {
-      setClients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Client)));
+      const clientsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Client));
+      setClients(clientsData);
       setLoading(false);
+
+      // Handle highlighted ID from search
+      if (highlightedId) {
+        const client = clientsData.find(c => c.id === highlightedId);
+        if (client) {
+          setSelectedClientForCases(client);
+        }
+      }
     }, (err) => {
       handleFirestoreError(err, OperationType.LIST, 'clients');
       setLoading(false);
@@ -204,7 +216,12 @@ export default function ClientManagement() {
                   {client.name[0]}
                 </div>
                 <div>
-                  <h3 className="text-2xl font-black text-slate-900 group-hover:text-indigo-600 transition-colors">{client.name}</h3>
+                  <h3 
+                    onClick={() => setSelectedClientForCases(client)}
+                    className="text-2xl font-black text-slate-900 group-hover:text-indigo-600 transition-colors cursor-pointer"
+                  >
+                    {client.name}
+                  </h3>
                   <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">موكل دائم</p>
                 </div>
               </div>

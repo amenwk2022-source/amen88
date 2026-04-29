@@ -770,14 +770,20 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                 <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm font-medium text-slate-500">
                   <div className="flex items-center gap-2">
                     <span className="text-slate-400">الموكل:</span>
-                    <span className="text-slate-900 font-extrabold text-lg">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/clients?id=${c.clientId}`);
+                      }}
+                      className="text-slate-900 font-extrabold text-lg hover:text-indigo-600 transition-colors cursor-pointer text-right"
+                    >
                       {c.clientName} 
                       {c.clientPosition && (
-                        <span className="mr-1 text-[10px] bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 text-slate-500">
+                        <span className="mr-1 text-[10px] bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 text-slate-500 font-bold">
                           ({POSITION_LABELS[c.clientPosition]})
                         </span>
                       )}
-                    </span>
+                    </button>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-slate-400">الخصم:</span>
@@ -912,7 +918,15 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                         </div>
                       </div>
                       <h4 className="font-black text-slate-900 mb-1 group-hover:text-indigo-600 transition-colors truncate">{c.caseNumber}</h4>
-                      <p className="text-xs text-slate-500 font-bold truncate mb-5">{c.clientName}</p>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/clients?id=${c.clientId}`);
+                        }}
+                        className="text-xs text-slate-500 font-bold truncate mb-5 block hover:text-indigo-600 transition-colors w-full text-right"
+                      >
+                        {c.clientName}
+                      </button>
                       
                       <div className="flex items-center justify-between pt-4 border-t border-slate-50">
                         <div className="flex items-center gap-2">
@@ -1534,14 +1548,17 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                   </div>
                   <div>
                     <h2 className="text-xl font-black text-slate-900">تفاصيل القضية: {selectedCaseDetails.caseNumber}</h2>
-                    <p className="text-sm text-slate-500 font-bold">
+                    <button
+                      onClick={() => navigate(`/clients?id=${selectedCaseDetails.clientId}`)}
+                      className="text-sm text-slate-500 font-bold hover:text-indigo-600 transition-colors cursor-pointer text-right"
+                    >
                       {selectedCaseDetails.clientName}
                       {selectedCaseDetails.clientPosition && (
-                        <span className="mr-2 px-2 py-0.5 bg-slate-100 rounded-lg text-xs">
+                        <span className="mr-2 px-2 py-0.5 bg-slate-100 rounded-lg text-xs font-bold">
                           ({POSITION_LABELS[selectedCaseDetails.clientPosition]})
                         </span>
                       )}
-                    </p>
+                    </button>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
