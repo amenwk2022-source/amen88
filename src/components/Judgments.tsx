@@ -2,13 +2,47 @@ import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, orderBy, addDoc, doc, updateDoc, deleteDoc, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useNavigate } from 'react-router-dom';
-import { Scale, Calendar, AlertCircle, CheckCircle2, Plus, Search, Filter, Trash2, Edit2, X, Check, ArrowRight, Gavel } from 'lucide-react';
+import { Scale, Calendar, AlertCircle, CheckCircle2, Plus, Search, Filter, Trash2, Edit2, X, Check, ArrowRight, Gavel, Clock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Judgment, Case, UserProfile } from '../types';
 import { cn } from '../lib/utils';
-import { format, isPast, parseISO, addDays } from 'date-fns';
+import { format, isPast, parseISO, addDays, differenceInSeconds } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import ConfirmModal from './ConfirmModal';
+
+function CountdownTimer({ deadline }: { deadline: string }) {
+  const [timeLeft, setTimeLeft] = useState<string>('');
+
+  useEffect(() => {
+    const calculateTimeLeft = () => {
+      const now = new Date();
+      const target = parseISO(deadline);
+      const diff = differenceInSeconds(target, now);
+
+      if (diff <= 0) {
+        setTimeLeft('انتهت المدة');
+        return;
+      }
+
+      const days = Math.floor(diff / (24 * 3600));
+      const hours = Math.floor((diff % (24 * 3600)) / 3600);
+      const minutes = Math.floor((diff % 3600) / 60);
+
+      const parts = [];
+      if (days > 0) parts.push(`${days} يوم`);
+      if (hours > 0) parts.push(`${hours} ساعة`);
+      if (minutes > 0) parts.push(`${minutes} دقيقة`);
+
+      setTimeLeft(parts.join(' و '));
+    };
+
+    calculateTimeLeft();
+    const interval = setInterval(calculateTimeLeft, 60000); // Update every minute
+    return () => clearInterval(interval);
+  }, [deadline]);
+
+  return <span>{timeLeft}</span>;
+}
 
 interface JudgmentsProps {
   user: UserProfile;
@@ -125,6 +159,17 @@ export default function Judgments({ user }: JudgmentsProps) {
            caseInfo?.caseNumber?.includes(searchTerm) ||
            caseInfo?.clientName?.toLowerCase().includes(searchTerm.toLowerCase());
   });
+
+    const safeFormat = (dateStr: string | undefined, formatStr: string) => {
+      if (!dateStr) return '---';
+      try {
+        const d = parseISO(dateStr);
+        if (isNaN(d.getTime())) return '---';
+        return format(d, formatStr);
+      } catch (e) {
+        return '---';
+      }
+    };
 
   return (
     <div className="space-y-6 rtl" dir="rtl">
@@ -259,15 +304,26 @@ export default function Judgments({ user }: JudgmentsProps) {
                 
                 {judgment.appealDeadline && (
                   <div className={cn(
-                    "flex items-center justify-between p-2 rounded-lg text-xs font-black",
-                    judgment.isAppealed ? "bg-emerald-50 text-emerald-600" :
-                    isDeadlinePassed ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"
+                    "flex flex-col gap-2 p-4 rounded-2xl text-xs font-black",
+                    judgment.isAppealed ? "bg-emerald-50 text-emerald-600 border border-emerald-100" :
+                    isDeadlinePassed ? "bg-red-50 text-red-600 border border-red-100" : "bg-amber-50 text-amber-600 border border-amber-100"
                   )}>
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-3 h-3" />
-                      <span>آخر موعد للاستئناف:</span>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4" />
+                        <span>آخر موعد للاستئناف:</span>
+                      </div>
+                      <span className="text-sm">{safeFormat(judgment.appealDeadline, 'yyyy/MM/dd')}</span>
                     </div>
-                    <span>{format(deadlineDate!, 'yyyy/MM/dd')}</span>
+                    {!judgment.isAppealed && !isDeadlinePassed && (
+                      <div className="flex items-center gap-2 pt-2 border-t border-amber-200/50">
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>الوقت المتبقي:</span>
+                        <span className="text-sm font-black underline decoration-wavy underline-offset-4">
+                          <CountdownTimer deadline={judgment.appealDeadline} />
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
 

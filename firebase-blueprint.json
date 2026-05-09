@@ -104,6 +104,49 @@
         "author": { "type": "string" }
       },
       "required": ["caseId", "text", "date", "author"]
+    },
+    "Judgment": {
+      "title": "Judgment",
+      "description": "Court judgments and appeal tracking.",
+      "type": "object",
+      "properties": {
+        "caseId": { "type": "string" },
+        "date": { "type": "string" },
+        "type": { "type": "string" },
+        "result": { "type": "string" },
+        "appealDeadline": { "type": "string" },
+        "appealStatus": { "type": "string" },
+        "isAppealed": { "type": "boolean" }
+      },
+      "required": ["caseId", "date", "result"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "Administrative tasks with optional sub-steps.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "priority": { "type": "string" },
+        "status": { "type": "string" },
+        "caseId": { "type": "string" },
+        "isSighaType": { "type": "boolean" }
+      },
+      "required": ["title", "status"]
+    },
+    "Consultation": {
+      "title": "Consultation",
+      "description": "Legal consultation requests.",
+      "type": "object",
+      "properties": {
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "subject": { "type": "string" },
+        "date": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["clientId", "subject", "date", "status"]
     }
   },
   "firestore": {
@@ -115,6 +158,11 @@
     "/finance/{financeId}": { "schema": "Finance", "description": "Financial records" },
     "/documents/{documentId}": { "schema": "Document", "description": "Case documents" },
     "/caseNotes/{noteId}": { "schema": "CaseNote", "description": "Internal case notes" },
+    "/judgments/{judgmentId}": { "schema": "Judgment", "description": "Case judgments" },
+    "/tasks/{taskId}": { "schema": "Task", "description": "Office tasks" },
+    "/consultations/{consultationId}": { "schema": "Consultation", "description": "Consultation requests" },
+    "/expertSessions/{sessionId}": { "schema": "object", "description": "Expert meeting sessions" },
+    "/notifications/{notificationId}": { "schema": "object", "description": "System notifications" },
     "/notificationSettings/{userId}": { "schema": "object", "description": "User notification preferences" },
     "/settings/{settingId}": { "schema": "object", "description": "Global system and office settings" }
   }

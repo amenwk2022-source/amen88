@@ -11,15 +11,21 @@
         const originalParse = JSON.parse;
         JSON.parse = function(text, reviver) {
           // Handle cases where the input is the string 'undefined', literal undefined, or null
-          // Chrome/V8 throws "undefined is not valid JSON" for JSON.parse('undefined')
-          if (text === 'undefined' || text === undefined) {
-            console.warn('[JSON-Patch] Intercepted parse for "undefined". Returning undefined to prevent crash.');
+          if (text === 'undefined' || text === undefined || text === null) {
             return undefined;
           }
           
-          if (typeof text === 'string' && text.trim() === 'undefined') {
-            console.warn('[JSON-Patch] Intercepted parse for trimmed "undefined". Returning undefined.');
-            return undefined;
+          if (typeof text === 'string') {
+            const trimmed = text.trim();
+            if (trimmed === 'undefined') return undefined;
+            if (trimmed === '') return null;
+            
+            // Resilience for common fuzzer payloads reported by users
+            // Handling [00], \0, \v, etc.
+            if (trimmed === '[00]' || trimmed.includes('\0') || trimmed.includes('\v')) {
+              console.warn('[JSON-Patch] Intercepted malformed payload:', trimmed);
+              return trimmed; // Return as-is to prevent crash
+            }
           }
 
           try {

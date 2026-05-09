@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, where, getDoc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { CalendarClock, ArrowRightLeft, AlertCircle, CheckCircle2, Clock, Search, Filter, Download, MessageSquare, Save, X, Scale, FileText, ImageIcon, Trash2, Printer, CalendarDays, CheckCircle, XCircle, Plus, Edit2, ArrowRight } from 'lucide-react';
+import { CalendarClock, ArrowRightLeft, AlertCircle, CheckCircle2, Clock, Search, Filter, Download, MessageSquare, Save, X, Scale, FileText, ImageIcon, Trash2, Printer, CalendarDays, CheckCircle, XCircle, Plus, Edit2, ArrowRight, Gavel } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Session, Case, UserProfile, ExpertSession, SystemSettings } from '../types';
 import { cn } from '../lib/utils';
@@ -39,6 +39,8 @@ export default function SessionRelay({ user }: SessionRelayProps) {
   const [editingSession, setEditingSession] = useState<Session | null>(null);
   const [decision, setDecision] = useState('');
   const [nextDate, setNextDate] = useState('');
+  const [judgmentResult, setJudgmentResult] = useState('');
+  const [appealDeadline, setAppealDeadline] = useState('');
   const [isJudgment, setIsJudgment] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isAddSessionModalOpen, setIsAddSessionModalOpen] = useState(false);
@@ -137,7 +139,21 @@ export default function SessionRelay({ user }: SessionRelayProps) {
           createdAt: new Date().toISOString()
         });
       } else {
-        // If judgment, update case status
+        // If judgment, create dynamic judgment record and update case status
+        const defaultDeadline = addDays(new Date(), 30).toISOString().split('T')[0];
+        
+        await addDoc(collection(db, 'judgments'), {
+          caseId: selectedSession.caseId,
+          date: new Date().toISOString().split('T')[0],
+          type: 'initial', // Default to initial when relayed from session
+          result: judgmentResult || decision,
+          appealDeadline: appealDeadline || defaultDeadline,
+          appealStatus: 'pending',
+          isAppealed: false,
+          notes: 'تم توليده تلقائياً من ترحيل الجلسة كحكم',
+          createdAt: new Date().toISOString()
+        });
+
         const caseRef = doc(db, 'cases', selectedSession.caseId);
         await updateDoc(caseRef, {
           status: 'judgment',
@@ -151,6 +167,8 @@ export default function SessionRelay({ user }: SessionRelayProps) {
       setSelectedSession(null);
       setDecision('');
       setNextDate('');
+      setJudgmentResult('');
+      setAppealDeadline('');
       setIsJudgment(false);
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'sessions');
@@ -1375,31 +1393,62 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                   />
                 </div>
 
-                <div className="flex items-center gap-3 p-4 bg-indigo-50 rounded-2xl border border-indigo-100">
-                  <input
-                    type="checkbox"
-                    id="isJudgment"
-                    className="w-5 h-5 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500"
-                    checked={isJudgment}
-                    onChange={(e) => setIsJudgment(e.target.checked)}
-                  />
-                  <label htmlFor="isJudgment" className="text-sm font-bold text-indigo-900 cursor-pointer">
-                    هذه الجلسة هي جلسة حكم (نهائية)
-                  </label>
-                </div>
-
-                {!isJudgment && (
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-700">تاريخ الجلسة القادمة</label>
+                <div className={cn(
+                  "p-4 rounded-2xl border transition-all space-y-4",
+                  isJudgment ? "bg-amber-50 border-amber-200" : "bg-indigo-50 border-indigo-100"
+                )}>
+                  <div className="flex items-center gap-3">
                     <input
-                      required
-                      type="date"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
-                      value={nextDate}
-                      onChange={(e) => setNextDate(e.target.value)}
+                      type="checkbox"
+                      id="isJudgment"
+                      className="w-5 h-5 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                      checked={isJudgment}
+                      onChange={(e) => setIsJudgment(e.target.checked)}
                     />
+                    <label htmlFor="isJudgment" className="text-sm font-bold text-slate-900 cursor-pointer flex items-center gap-2">
+                       {isJudgment && <Gavel className="w-4 h-4 text-amber-600" />}
+                       هذه الجلسة هي جلسة نطق بالحكم
+                    </label>
                   </div>
-                )}
+
+                  {isJudgment ? (
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-amber-700 uppercase tracking-widest block pr-1">منطوق الحكم</label>
+                        <textarea
+                          placeholder="اكتب منطوق الحكم هنا..."
+                          className="w-full bg-white border border-amber-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-amber-600 focus:border-transparent transition-all"
+                          rows={3}
+                          value={judgmentResult}
+                          onChange={(e) => {
+                            setJudgmentResult(e.target.value);
+                            setDecision(e.target.value);
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-amber-700 uppercase tracking-widest block pr-1">آخر موعد للاستئناف</label>
+                        <input
+                          type="date"
+                          className="w-full bg-white border border-amber-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-amber-600 focus:border-transparent transition-all"
+                          value={appealDeadline}
+                          onChange={(e) => setAppealDeadline(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-indigo-900">تاريخ الجلسة القادمة</label>
+                      <input
+                        required={!isJudgment}
+                        type="date"
+                        className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                        value={nextDate}
+                        onChange={(e) => setNextDate(e.target.value)}
+                      />
+                    </div>
+                  )}
+                </div>
 
                 <div className="pt-4 flex gap-4">
                   <button

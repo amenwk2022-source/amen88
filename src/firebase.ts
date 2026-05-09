@@ -54,8 +54,8 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     operationType,
     path
   }
-  console.error('Firestore Error Details:', errInfo);
-  throw new Error(`Firestore operation failed: ${errInfo.error} (${operationType} on ${path})`);
+  console.error('Firestore Error Status:', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
 }
 
 // Test connection to Firestore

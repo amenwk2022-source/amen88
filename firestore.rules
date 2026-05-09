@@ -2,154 +2,182 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // ===============================================================
-    // Helper Functions
+    // Global Safety Net: Default Deny
     // ===============================================================
-    function isAuthenticated() {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ===============================================================
+    // Shared Helper Functions (Pillar 3 & 4)
+    // ===============================================================
+    function isSignedIn() {
       return request.auth != null;
     }
 
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Auth tokens never contain custom claims. Look up roles from the database.
     function isAdmin() {
-      return isAuthenticated() &&
-        ((exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-          (request.auth.token.email == "amenwk2022@gmail.com" && request.auth.token.email_verified == true));
+      return isVerified() && (
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+        request.auth.token.email == "amenwk2022@gmail.com"
+      );
     }
 
-    function isLawyer() {
-      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'lawyer';
+    function hasRole(role) {
+      return isVerified() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
     }
 
-    function isStaff() {
-      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'staff';
-    }
-
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
-    }
-
-    function hasOnlyAllowedFields(fields) {
-      return request.resource.data.keys().hasOnly(fields);
-    }
+    function isLawyer() { return hasRole('lawyer') || isAdmin(); }
+    function isStaff() { return hasRole('staff') || isLawyer(); }
 
     // ===============================================================
-    // Domain Validators
+    // Entity Validators (Pillar 2)
     // ===============================================================
+    
     function isValidUser(data) {
-      return data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
-             data.email is string && data.email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$") &&
+      return data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.email is string && data.email.size() <= 100 &&
              data.role in ['admin', 'lawyer', 'staff', 'client'];
     }
 
     function isValidClient(data) {
-      return data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
-             data.phone is string && data.phone.size() > 0 && data.phone.size() < 20;
+      return data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+             data.phone is string && data.phone.size() <= 20;
     }
 
     function isValidCase(data) {
-      return data.clientId is string && data.status in ['pre-filing', 'active', 'execution', 'archive'];
+      return isValidId(data.clientId) && 
+             data.status in ['pre-filing', 'active', 'execution', 'archive', 'judgment'];
     }
 
-    function isValidProcedure(data) {
-      return data.caseId is string && data.type is string && data.type.size() > 0 && data.type.size() < 200;
-    }
-
-    function isValidSession(data) {
-      return data.caseId is string && data.date is string && data.date.size() > 0;
+    function isValidJudgment(data) {
+      return isValidId(data.caseId) && 
+             data.date is string && data.date.size() <= 50 &&
+             data.result is string && data.result.size() <= 5000;
     }
 
     function isValidTask(data) {
-      return data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
-             data.assignedTo is string && data.status in ['pending', 'in-progress', 'completed'];
-    }
-
-    function isValidCaseNote(data) {
-      return data.caseId is string && data.text is string && data.text.size() > 0 && data.text.size() < 5000 &&
-             data.date is string && data.author is string;
+      return data.title is string && data.title.size() > 0 && data.title.size() <= 500 &&
+             data.status in ['pending', 'in-progress', 'completed'];
     }
 
     // ===============================================================
-    // Match Rules
+    // Match Blocks (Pillar 1, 4, 8)
     // ===============================================================
+
     match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidUser(request.resource.data) && (isOwner(userId) || isAdmin());
-      allow update: if isAuthenticated() && isValidUser(request.resource.data) && (isAdmin() || (isOwner(userId) && request.resource.data.role == resource.data.role));
+      allow read: if isSignedIn();
+      allow create: if isVerified() && isValidUser(incoming()) && (request.auth.uid == userId || isAdmin());
+      allow update: if isVerified() && isValidUser(incoming()) && (
+        isAdmin() || 
+        (request.auth.uid == userId && incoming().role == existing().role)
+      );
     }
 
     match /clients/{clientId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin() || isStaff() || isLawyer();
+      allow read: if isVerified();
+      allow create: if isStaff() && isValidClient(incoming());
+      allow update: if isStaff() && isValidClient(incoming());
+      allow delete: if isAdmin();
     }
 
     match /cases/{caseId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin() || isLawyer() || isStaff();
+      allow read: if isVerified();
+      allow create: if isLawyer() && isValidCase(incoming());
+      allow update: if isLawyer() && isValidCase(incoming()) && (
+        // Action: Update Status
+        (incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) && incoming().updatedAt == request.time) ||
+        // Action: Complete Details
+        (isAdmin() || (hasRole('lawyer') && incoming().clientId == existing().clientId))
+      );
+      allow delete: if isAdmin();
     }
 
     match /sessions/{sessionId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidSession(request.resource.data) && (isAdmin() || isLawyer() || isStaff());
-      allow update: if isAuthenticated() && isValidSession(request.resource.data) && (isAdmin() || isLawyer() || isStaff());
+      allow read: if isVerified();
+      allow create: if isStaff() && isValidId(incoming().caseId);
+      allow update: if isStaff() && (
+        incoming().diff(existing()).affectedKeys().hasAny(['decision', 'nextDate', 'date'])
+      );
       allow delete: if isAdmin();
-    }
-
-    match /procedures/{procedureId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidProcedure(request.resource.data) && (isAdmin() || isLawyer() || isStaff());
-      allow update: if isAuthenticated() && isValidProcedure(request.resource.data) && (isAdmin() || isLawyer() || isStaff());
-      allow delete: if isAdmin();
-    }
-
-    match /finance/{financeId} {
-      allow read: if isAdmin() || isLawyer();
-      allow write: if isAdmin();
-    }
-
-    match /documents/{documentId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin() || isLawyer() || isStaff();
     }
 
     match /judgments/{judgmentId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin() || isLawyer() || isStaff();
-    }
-
-    match /expertSessions/{sessionId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin() || isLawyer() || isStaff();
-    }
-
-    match /notifications/{notificationId} {
-      allow read: if isAuthenticated() && (request.auth.uid == resource.data.userId || isAdmin());
-      allow write: if isAdmin() || isLawyer() || isStaff();
-    }
-
-    match /notificationSettings/{userId} {
-      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
-      allow write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
-    }
-
-    match /settings/{settingId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow read: if isVerified();
+      allow create: if isLawyer() && isValidJudgment(incoming());
+      allow update: if isLawyer() && isValidJudgment(incoming()) && (
+        // Action: Appeal
+        incoming().diff(existing()).affectedKeys().hasAny(['isAppealed', 'appealStatus']) ||
+        isAdmin()
+      );
+      allow delete: if isAdmin();
     }
 
     match /tasks/{taskId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidTask(request.resource.data) && (isAdmin() || isLawyer() || isStaff());
-      allow update: if isAuthenticated() && isValidTask(request.resource.data) && (isAdmin() || isLawyer() || isStaff() || request.auth.uid == resource.data.assignedTo);
+      allow read: if isVerified();
+      allow create: if isStaff() && isValidTask(incoming());
+      allow update: if (isStaff() || request.auth.uid == existing().assignedTo) && isValidTask(incoming());
       allow delete: if isAdmin() || isLawyer();
     }
 
-    match /caseNotes/{noteId} {
-      allow read: if isAdmin() || isLawyer() || isStaff();
-      allow write: if isAdmin() || isLawyer() || isStaff();
+    match /finance/{financeId} {
+      allow read: if isLawyer();
+      allow write: if isAdmin();
+    }
+
+    match /payments/{paymentId} {
+      allow read: if isLawyer();
+      allow create: if isLawyer();
+      allow delete: if isAdmin();
+    }
+
+    match /expenses/{expenseId} {
+      allow read: if isLawyer();
+      allow create: if isLawyer();
+      allow delete: if isAdmin();
+    }
+
+    match /documents/{documentId} {
+      allow read: if isVerified();
+      allow write: if isStaff();
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isVerified() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isStaff();
+      allow update: if isVerified() && resource.data.userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['isRead']);
+      allow delete: if isVerified() && resource.data.userId == request.auth.uid;
+    }
+
+    match /notificationSettings/{userId} {
+      allow read, write: if isVerified() && (request.auth.uid == userId || isAdmin());
+    }
+
+    match /settings/{settingId} {
+      allow read: if isVerified();
+      allow write: if isAdmin();
     }
 
     match /consultations/{consultationId} {
-      allow read: if isAuthenticated() && (isAdmin() || isLawyer() || request.auth.uid == resource.data.clientId);
-      allow create: if isAuthenticated() && (isAdmin() || isLawyer() || request.auth.uid == request.resource.data.clientId);
-      allow update: if isAuthenticated() && (isAdmin() || isLawyer());
+      allow read: if isVerified() && (resource.data.clientId == request.auth.uid || isLawyer());
+      allow create: if isVerified() && (incoming().clientId == request.auth.uid || isLawyer());
+      allow update: if isLawyer();
       allow delete: if isAdmin();
     }
 

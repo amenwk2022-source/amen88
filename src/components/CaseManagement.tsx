@@ -2,12 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, where, getDocs } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { Plus, Search, Filter, Briefcase, Scale, Gavel, Archive, MoreVertical, Trash2, Edit2, X, Check, ArrowLeftRight, CalendarPlus, FileCheck, DollarSign, Clock, FileText, Eye, CheckCircle2, Circle, Printer, Users, AlertTriangle, AlertCircle, Sparkles, Zap, RefreshCw, LayoutGrid, List, MoreHorizontal } from 'lucide-react';
+import { Plus, Search, Filter, Briefcase, Scale, Gavel, Archive, MoreVertical, Trash2, Edit2, X, Check, ArrowLeftRight, CalendarPlus, FileCheck, DollarSign, Clock, FileText, Eye, CheckCircle2, Circle, Printer, Users, AlertTriangle, AlertCircle, Sparkles, Zap, RefreshCw, LayoutGrid, List, MoreHorizontal, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import { Case, CaseStatus, Client, Judgment, UserProfile, SystemSettings } from '../types';
 import { cn } from '../lib/utils';
-import { addDays, format, parseISO } from 'date-fns';
+import { addDays, format, parseISO, differenceInSeconds, isPast } from 'date-fns';
 import { generateCaseSummary } from '../services/geminiService';
 import ConfirmModal from './ConfirmModal';
 import { createNotification } from './NotificationCenter';
@@ -29,6 +29,40 @@ const POSITION_LABELS: Record<string, string> = {
 
 interface CaseManagementProps {
   user: UserProfile;
+}
+
+function CountdownTimer({ deadline }: { deadline: string }) {
+  const [timeLeft, setTimeLeft] = useState<string>('');
+
+  useEffect(() => {
+    const calculateTimeLeft = () => {
+      const now = new Date();
+      const target = parseISO(deadline);
+      const diff = differenceInSeconds(target, now);
+
+      if (diff <= 0) {
+        setTimeLeft('انتهت المدة');
+        return;
+      }
+
+      const days = Math.floor(diff / (24 * 3600));
+      const hours = Math.floor((diff % (24 * 3600)) / 3600);
+      const minutes = Math.floor((diff % 3600) / 60);
+
+      const parts = [];
+      if (days > 0) parts.push(`${days} يوم`);
+      if (hours > 0) parts.push(`${hours} ساعة`);
+      if (minutes > 0) parts.push(`${minutes} دقيقة`);
+
+      setTimeLeft(parts.join(' و '));
+    };
+
+    calculateTimeLeft();
+    const interval = setInterval(calculateTimeLeft, 60000);
+    return () => clearInterval(interval);
+  }, [deadline]);
+
+  return <span>{timeLeft}</span>;
 }
 
 export default function CaseManagement({ user }: CaseManagementProps) {
@@ -1753,6 +1787,27 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                                event.timelineType === 'procedure' ? event.notes : 
                                event.timelineType === 'expert' ? event.decision : event.result}
                             </p>
+                            {event.timelineType === 'judgment' && event.appealDeadline && (
+                              <div className={cn(
+                                "mt-3 p-3 rounded-xl text-[10px] font-black flex items-center justify-between",
+                                event.isAppealed ? "bg-emerald-50 text-emerald-600" :
+                                isPast(parseISO(event.appealDeadline)) ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"
+                              )}>
+                                <div className="flex items-center gap-2">
+                                  <Calendar className="w-3 h-3" />
+                                  <span>آخر موعد للاستئناف:</span>
+                                  <span>{event.appealDeadline}</span>
+                                </div>
+                                {!event.isAppealed && !isPast(parseISO(event.appealDeadline)) && (
+                                  <div className="flex items-center gap-2">
+                                    <Clock className="w-3 h-3" />
+                                    <span>المتبقي:</span>
+                                    <CountdownTimer deadline={event.appealDeadline} />
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
                             {event.timelineType === 'judgment' && event.type === 'initial' && !event.isAppealed && event.appealStatus !== 'appealed' && isLawyer && (
                               <div className="mt-4 flex items-center justify-end">
                                 <button
