@@ -525,6 +525,24 @@ export default function CaseManagement({ user }: CaseManagementProps) {
         updatedAt: new Date().toISOString()
       });
 
+      // إنشاء مهمة استلام الحكم تلقائياً
+      await addDoc(collection(db, 'tasks'), {
+        title: 'استلام الحكم والتمثيل القضائي',
+        description: `تم إنشاء مهمة تلقائية لمتابعة واستلام الحكم الصادر (من ملف القضية). منطوق الحكم: ${judgmentData.result}`,
+        assignedTo: selectedCaseForJudgment.lawyerId || user.uid,
+        dueDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        status: 'pending',
+        priority: 'high',
+        caseId: selectedCaseForJudgment.id,
+        createdAt: new Date().toISOString(),
+        subSteps: [
+          { id: 'step-1', title: 'مراجعة أمين السر وقلم كتاب المحكمة لاستخراج مسودة الحكم', status: 'pending' },
+          { id: 'step-2', title: 'سحب صورة رسمية من منطوق الحكم وأسبابه', status: 'pending' },
+          { id: 'step-3', title: 'دراسة أسباب الحكم وإعداد مذكرة بالرأي حول استئنافه', status: 'pending' },
+          { id: 'step-4', title: 'التواصل مع الموكل وإطلاعه على منطوق الحكم وخطة العمل', status: 'pending' }
+        ]
+      });
+
       setIsJudgmentModalOpen(false);
       setSelectedCaseForJudgment(null);
       setJudgmentData({ 
