@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, where, getDoc, deleteDoc } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, where, getDoc, deleteDoc, getDocs } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { CalendarClock, ArrowRightLeft, AlertCircle, CheckCircle2, Clock, Search, Filter, Download, MessageSquare, Save, X, Scale, FileText, ImageIcon, Trash2, Printer, CalendarDays, CheckCircle, XCircle, Plus, Edit2, ArrowRight, Gavel } from 'lucide-react';
@@ -52,6 +52,23 @@ export default function SessionRelay({ user }: SessionRelayProps) {
   const [success, setSuccess] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
+
+  // States for Add Session and Relay Decision
+  const [addSessionCaseId, setAddSessionCaseId] = useState<string>('');
+  const [addSessionDate, setAddSessionDate] = useState<string>('');
+  const [addSessionDecision, setAddSessionDecision] = useState<string>('');
+  const [addSessionNextDate, setAddSessionNextDate] = useState<string>('');
+  const [addSessionIsJudgment, setAddSessionIsJudgment] = useState<boolean>(false);
+  const [addSessionJudgmentResult, setAddSessionJudgmentResult] = useState<string>('');
+  const [addSessionAppealDeadline, setAddSessionAppealDeadline] = useState<string>('');
+
+  // States for Edit Session and Relay Decision
+  const [editSessionDate, setEditSessionDate] = useState<string>('');
+  const [editSessionDecision, setEditSessionDecision] = useState<string>('');
+  const [editSessionNextDate, setEditSessionNextDate] = useState<string>('');
+  const [editSessionIsJudgment, setEditSessionIsJudgment] = useState<boolean>(false);
+  const [editSessionJudgmentResult, setEditSessionJudgmentResult] = useState<string>('');
+  const [editSessionAppealDeadline, setEditSessionAppealDeadline] = useState<string>('');
 
   const [isDecisionModalOpen, setIsDecisionModalOpen] = useState(false);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
@@ -179,24 +196,81 @@ export default function SessionRelay({ user }: SessionRelayProps) {
 
   const handleAddSession = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCaseId || !nextDate) {
+    if (!addSessionCaseId || !addSessionDate) {
       setError('يرجى اختيار القضية وتاريخ الجلسة');
       return;
     }
 
+    if (addSessionDecision) {
+      if (!addSessionIsJudgment && !addSessionNextDate) {
+        setError('يرجى إدخال تاريخ الجلسة القادمة أو تحديد أنها جلسة حكم عند إدخال قرار');
+        return;
+      }
+    }
+
     try {
+      setError(null);
       setIsRelaying(true);
-      await addDoc(collection(db, 'sessions'), {
-        caseId: selectedCaseId,
-        date: nextDate,
-        decision: '',
-        nextDate: '',
+
+      const sessionObj: any = {
+        caseId: addSessionCaseId,
+        date: addSessionDate,
+        decision: addSessionDecision || '',
+        nextDate: addSessionIsJudgment ? '' : (addSessionDecision ? addSessionNextDate : ''),
         lawyerId: user.uid,
-        createdAt: new Date().toISOString()
-      });
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      // 1. Add current session
+      await addDoc(collection(db, 'sessions'), sessionObj);
+
+      // 2. If decision is filled, handle relay
+      if (addSessionDecision) {
+        if (!addSessionIsJudgment) {
+          // Create new session for nextDate
+          await addDoc(collection(db, 'sessions'), {
+            caseId: addSessionCaseId,
+            date: addSessionNextDate,
+            decision: '',
+            nextDate: '',
+            lawyerId: user.uid,
+            createdAt: new Date().toISOString()
+          });
+        } else {
+          // Create judgment record and update case status
+          const defaultDeadline = addDays(new Date(), 30).toISOString().split('T')[0];
+          await addDoc(collection(db, 'judgments'), {
+            caseId: addSessionCaseId,
+            date: new Date().toISOString().split('T')[0],
+            type: 'initial',
+            result: addSessionJudgmentResult || addSessionDecision,
+            appealDeadline: addSessionAppealDeadline || defaultDeadline,
+            appealStatus: 'pending',
+            isAppealed: false,
+            notes: 'تم توليده تلقائياً من ترحيل الجلسة كحكم من رول الجلسات',
+            createdAt: new Date().toISOString()
+          });
+
+          await updateDoc(doc(db, 'cases', addSessionCaseId), {
+            status: 'judgment',
+            updatedAt: new Date().toISOString()
+          });
+        }
+      }
+
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+      
+      // Reset states
       setIsAddSessionModalOpen(false);
-      setSelectedCaseId('');
-      setNextDate('');
+      setAddSessionCaseId('');
+      setAddSessionDate('');
+      setAddSessionDecision('');
+      setAddSessionNextDate('');
+      setAddSessionIsJudgment(false);
+      setAddSessionJudgmentResult('');
+      setAddSessionAppealDeadline('');
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'sessions');
     } finally {
@@ -206,17 +280,78 @@ export default function SessionRelay({ user }: SessionRelayProps) {
 
   const handleEditSession = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedSession || !editDate) return;
+    if (!selectedSession || !editSessionDate) return;
 
     try {
       setIsRelaying(true);
-      await updateDoc(doc(db, 'sessions', selectedSession.id), {
-        date: editDate,
+      
+      const updateData: any = {
+        date: editSessionDate,
+        decision: editSessionDecision,
+        nextDate: editSessionIsJudgment ? '' : (editSessionDecision ? editSessionNextDate : ''),
         updatedAt: new Date().toISOString()
-      });
+      };
+
+      await updateDoc(doc(db, 'sessions', selectedSession.id), updateData);
+
+      // If they input a decision and nextDate is filled, check if we need to create/update next session
+      if (editSessionDecision && !editSessionIsJudgment && editSessionNextDate) {
+        // Look if there's already a future session to prevent double scheduling
+        const sessionsQuery = query(
+          collection(db, 'sessions'),
+          where('caseId', '==', selectedSession.caseId),
+          where('date', '==', editSessionNextDate)
+        );
+        const sessionsSnap = await getDocs(sessionsQuery);
+        if (sessionsSnap.empty) {
+          await addDoc(collection(db, 'sessions'), {
+            caseId: selectedSession.caseId,
+            date: editSessionNextDate,
+            decision: '',
+            nextDate: '',
+            lawyerId: selectedSession.lawyerId || user.uid,
+            createdAt: new Date().toISOString()
+          });
+        }
+      }
+
+      // If they converted it to judgment, handle judgment creation
+      if (editSessionDecision && editSessionIsJudgment) {
+        // Check if judgment record already exists for this case to avoid duplicates
+        const judgmentsQuery = query(collection(db, 'judgments'), where('caseId', '==', selectedSession.caseId));
+        const judgmentsSnap = await getDocs(judgmentsQuery);
+        if (judgmentsSnap.empty) {
+          const defaultDeadline = addDays(new Date(), 30).toISOString().split('T')[0];
+          await addDoc(collection(db, 'judgments'), {
+            caseId: selectedSession.caseId,
+            date: new Date().toISOString().split('T')[0],
+            type: 'initial',
+            result: editSessionJudgmentResult || editSessionDecision,
+            appealDeadline: editSessionAppealDeadline || defaultDeadline,
+            appealStatus: 'pending',
+            isAppealed: false,
+            notes: 'تم توليده تلقائياً من تعديل الجلسة كحكم من رول الجلسات',
+            createdAt: new Date().toISOString()
+          });
+
+          await updateDoc(doc(db, 'cases', selectedSession.caseId), {
+            status: 'judgment',
+            updatedAt: new Date().toISOString()
+          });
+        }
+      }
+
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+
       setIsEditSessionModalOpen(false);
       setSelectedSession(null);
-      setEditDate('');
+      setEditSessionDate('');
+      setEditSessionDecision('');
+      setEditSessionNextDate('');
+      setEditSessionIsJudgment(false);
+      setEditSessionJudgmentResult('');
+      setEditSessionAppealDeadline('');
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'sessions');
     } finally {
@@ -604,7 +739,17 @@ export default function SessionRelay({ user }: SessionRelayProps) {
 
             <div className="flex gap-2">
               <button 
-                onClick={() => setIsAddSessionModalOpen(true)}
+                onClick={() => {
+                  setAddSessionCaseId('');
+                  setAddSessionDate('');
+                  setAddSessionDecision('');
+                  setAddSessionNextDate('');
+                  setAddSessionIsJudgment(false);
+                  setAddSessionJudgmentResult('');
+                  setAddSessionAppealDeadline('');
+                  setError(null);
+                  setIsAddSessionModalOpen(true);
+                }}
                 className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-emerald-700 transition-all shadow-sm"
               >
                 <Plus className="w-4 h-4" />
@@ -837,7 +982,12 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                           <button
                             onClick={() => {
                               setSelectedSession(session);
-                              setEditDate(session.date.split('T')[0]);
+                              setEditSessionDate(session.date.split('T')[0]);
+                              setEditSessionDecision(session.decision || '');
+                              setEditSessionNextDate(session.nextDate || '');
+                              setEditSessionIsJudgment(session.caseInfo?.status === 'judgment');
+                              setEditSessionJudgmentResult(session.decision || '');
+                              setEditSessionAppealDeadline('');
                               setIsEditSessionModalOpen(true);
                             }}
                             className="flex items-center gap-1 text-[10px] font-black text-slate-600 hover:text-slate-800"
@@ -1501,22 +1651,29 @@ export default function SessionRelay({ user }: SessionRelayProps) {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
+              className="relative bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
             >
-              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-                <h2 className="text-xl font-black text-slate-900">إضافة جلسة جديدة</h2>
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
+                <h2 className="text-xl font-black text-slate-900 font-sans">إضافة جلسة جديدة / ترحيل قرار</h2>
                 <button onClick={() => setIsAddSessionModalOpen(false)} className="p-2 hover:bg-white rounded-xl transition-all">
                   <X className="w-5 h-5 text-slate-400" />
                 </button>
               </div>
-              <form onSubmit={handleAddSession} className="p-8 space-y-6">
+              <form onSubmit={handleAddSession} className="p-8 space-y-6 overflow-y-auto flex-1 font-sans">
+                {error && (
+                  <div className="p-4 bg-red-50 border border-red-100 text-red-700 rounded-2xl flex items-center gap-2 text-xs font-bold">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{error}</span>
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <label className="text-sm font-bold text-slate-700">اختر القضية</label>
                   <select
                     required
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
-                    value={selectedCaseId}
-                    onChange={(e) => setSelectedCaseId(e.target.value)}
+                    value={addSessionCaseId}
+                    onChange={(e) => setAddSessionCaseId(e.target.value)}
                   >
                     <option value="">اختر القضية...</option>
                     {cases.map(c => (
@@ -1528,33 +1685,101 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-bold text-slate-700">تاريخ الجلسة</label>
+                  <label className="text-sm font-bold text-slate-700">تاريخ الجلسة الحالية</label>
                   <input
                     required
                     type="date"
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
-                    value={nextDate}
-                    onChange={(e) => setNextDate(e.target.value)}
+                    value={addSessionDate}
+                    onChange={(e) => setAddSessionDate(e.target.value)}
                   />
                 </div>
 
-                <div className="pt-4 flex gap-4">
+                <div className="border-t border-slate-100 pt-4 space-y-4">
+                  <h3 className="text-sm font-black text-indigo-600">تفاصيل القرار والترحيل (اختياري)</h3>
+                  <p className="text-[11px] text-slate-500 font-bold">يمكنك إثبات القرار وترحيل الجلسة فوراً من هنا دون الحاجة للذهاب لخانة القضايا.</p>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">القرار أو الإجراء</label>
+                    <textarea
+                      placeholder="امسح الجلسة أو اكتب القرار والطلب، مثل: التأجيل للاطلاع أو لتقديم مستندات..."
+                      className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent h-24 resize-none transition-all"
+                      value={addSessionDecision}
+                      onChange={(e) => setAddSessionDecision(e.target.value)}
+                    />
+                  </div>
+
+                  {addSessionDecision && (
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-4">
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          id="addSessionIsJudgment"
+                          className="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500 cursor-pointer"
+                          checked={addSessionIsJudgment}
+                          onChange={(e) => setAddSessionIsJudgment(e.target.checked)}
+                        />
+                        <label htmlFor="addSessionIsJudgment" className="text-xs font-black text-slate-700 cursor-pointer select-none">
+                          هذه الجلسة هي جلسة نطق بالحكم؟
+                        </label>
+                      </div>
+
+                      {!addSessionIsJudgment ? (
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-700">تاريخ الجلسة القادمة (الترحيل)</label>
+                          <input
+                            required
+                            type="date"
+                            className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                            value={addSessionNextDate}
+                            onChange={(e) => setAddSessionNextDate(e.target.value)}
+                          />
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold text-slate-700">منطوق الحكم بالتفصيل</label>
+                            <textarea
+                              required
+                              placeholder="اكتب منطوق الحكم الصادر، مثل: حكمت المحكمة بـ..."
+                              className="w-full bg-white border border-slate-200 rounded-xl p-4 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent h-24 resize-none transition-all"
+                              value={addSessionJudgmentResult}
+                              onChange={(e) => setAddSessionJudgmentResult(e.target.value)}
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold text-slate-700">آخر موعد للاستئناف (تلقائياً بعد 30 يوماً)</label>
+                            <input
+                              type="date"
+                              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                              value={addSessionAppealDeadline}
+                              onChange={(e) => setAddSessionAppealDeadline(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-4 flex gap-4 shrink-0">
                   <button
                     type="submit"
                     disabled={isRelaying}
-                    className="flex-1 bg-indigo-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+                    className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl shadow-lg shadow-indigo-100 transition-all flex items-center justify-center gap-2"
                   >
                     {isRelaying ? (
                       <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     ) : (
                       <Save className="w-5 h-5" />
                     )}
-                    إضافة الجلسة
+                    <span>حفظ البيانات والترحيل</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setIsAddSessionModalOpen(false)}
-                    className="px-8 bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl hover:bg-slate-200 transition-all"
+                    className="px-8 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-4 rounded-2xl transition-all"
                   >
                     إلغاء
                   </button>
@@ -1580,38 +1805,108 @@ export default function SessionRelay({ user }: SessionRelayProps) {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
+              className="relative bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col font-sans"
             >
-              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-                <h2 className="text-xl font-black text-slate-900">تعديل موعد الجلسة</h2>
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
+                <h2 className="text-xl font-black text-slate-900">تعديل الجلسة وإثبات القرار</h2>
                 <button onClick={() => setIsEditSessionModalOpen(false)} className="p-2 hover:bg-white rounded-xl transition-all">
                   <X className="w-5 h-5 text-slate-400" />
                 </button>
               </div>
-              <form onSubmit={handleEditSession} className="p-8 space-y-6">
+              <form onSubmit={handleEditSession} className="p-8 space-y-6 overflow-y-auto flex-1">
+                <div className="bg-amber-50 rounded-2xl p-4 border border-amber-100 space-y-1">
+                  <h4 className="text-xs font-black text-amber-950">القضية الحالية:</h4>
+                  <p className="text-sm font-bold text-amber-900">
+                    {selectedSession.caseInfo?.caseNumber || '---'} / {selectedSession.caseInfo?.year || '---'} - {selectedSession.caseInfo?.clientName || '---'}
+                  </p>
+                </div>
+
                 <div className="space-y-2">
-                  <label className="text-sm font-bold text-slate-700">تاريخ الجلسة الجديد</label>
+                  <label className="text-sm font-bold text-slate-700">تاريخ الجلسة</label>
                   <input
                     required
                     type="date"
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
-                    value={editDate}
-                    onChange={(e) => setEditDate(e.target.value)}
+                    value={editSessionDate}
+                    onChange={(e) => setEditSessionDate(e.target.value)}
                   />
                 </div>
 
-                <div className="pt-4 flex gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-700">القرار أو الإجراء</label>
+                  <textarea
+                    placeholder="اكتب القرار والطلب، مثل: التأجيل للاطلاع أو لتقديم مستندات..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent h-24 resize-none transition-all"
+                    value={editSessionDecision}
+                    onChange={(e) => setEditSessionDecision(e.target.value)}
+                  />
+                </div>
+
+                {editSessionDecision && (
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-4">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        id="editSessionIsJudgment"
+                        className="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500 cursor-pointer"
+                        checked={editSessionIsJudgment}
+                        onChange={(e) => setEditSessionIsJudgment(e.target.checked)}
+                      />
+                      <label htmlFor="editSessionIsJudgment" className="text-xs font-black text-slate-700 cursor-pointer select-none">
+                        هذه الجلسة هي جلسة نطق بالحكم؟
+                      </label>
+                    </div>
+
+                    {!editSessionIsJudgment ? (
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-700">تاريخ الجلسة القادمة (الترحيل)</label>
+                        <input
+                          required
+                          type="date"
+                          className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                          value={editSessionNextDate}
+                          onChange={(e) => setEditSessionNextDate(e.target.value)}
+                        />
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-700">منطوق الحكم بالتفصيل</label>
+                          <textarea
+                            required
+                            placeholder="اكتب منطوق الحكم الصادر، مثل: حكمت المحكمة بـ..."
+                            className="w-full bg-white border border-slate-200 rounded-xl p-4 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent h-24 resize-none transition-all"
+                            value={editSessionJudgmentResult}
+                            onChange={(e) => setEditSessionJudgmentResult(e.target.value)}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-700">آخر موعد للاستئناف (تلقائياً بعد 30 يوماً)</label>
+                          <input
+                            type="date"
+                            className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                            value={editSessionAppealDeadline}
+                            onChange={(e) => setEditSessionAppealDeadline(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="pt-4 flex gap-4 shrink-0">
                   <button
                     type="submit"
                     disabled={isRelaying}
-                    className="flex-1 bg-indigo-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+                    className="flex-1 bg-indigo-600 font-bold py-4 rounded-2xl shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 text-white text-sm"
                   >
                     {isRelaying ? (
                       <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     ) : (
                       <Save className="w-5 h-5" />
                     )}
-                    حفظ التعديل
+                    <span>حفظ التعديلات</span>
                   </button>
                   <button
                     type="button"
