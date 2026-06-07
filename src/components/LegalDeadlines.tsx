@@ -80,7 +80,18 @@ export default function LegalDeadlines({ user }: LegalDeadlinesProps) {
           </h2>
           
           <div className="grid gap-4">
-            {judgments.filter(j => !j.isAppealed && cases.some(c => c.id === j.caseId)).map((judgment) => {
+            {judgments.filter(judgment => {
+              if (judgment.isAppealed) return false;
+              if (!cases.some(c => c.id === judgment.caseId)) return false;
+              if (!judgment.appealDeadline) return false;
+              try {
+                const dDate = parseISO(judgment.appealDeadline);
+                if (isNaN(dDate.getTime())) return false;
+                return differenceInDays(dDate, new Date()) >= 0;
+              } catch (e) {
+                return false;
+              }
+            }).map((judgment) => {
               const c = getJudgmentCase(judgment.caseId);
               let deadlineDate: Date | null = null;
               let judgmentDate: Date | null = null;

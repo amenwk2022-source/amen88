@@ -172,9 +172,10 @@ export default function Dashboard({ user }: DashboardProps) {
     // Judgments (Deadlines)
     const judgmentsUnsub = onSnapshot(collection(db, 'judgments'), (snapshot) => {
       const judgments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Judgment));
+      const todayDateStr = new Date().toLocaleDateString('en-CA');
       setActiveDeadlines(
         judgments
-          .filter(j => !j.isAppealed)
+          .filter(j => !j.isAppealed && j.appealDeadline >= todayDateStr)
           .sort((a, b) => a.appealDeadline.localeCompare(b.appealDeadline))
           .slice(0, 3)
       );
@@ -271,7 +272,8 @@ export default function Dashboard({ user }: DashboardProps) {
       return;
     }
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date().toLocaleDateString('en-CA');
+    const localHour = new Date().getHours();
     
     // Check regular sessions
     const omittedRegular = allSessions.filter(s => {
@@ -279,7 +281,7 @@ export default function Dashboard({ user }: DashboardProps) {
       if (!caseItem) return false;
       const sDateStr = s.date?.split('T')[0];
       if (!sDateStr) return false;
-      return sDateStr < today && (!s.decision || s.decision === '') && caseItem.status !== 'archive';
+      return (sDateStr < today || (sDateStr === today && localHour >= 13)) && (!s.decision || s.decision === '') && caseItem.status !== 'archive';
     });
 
     // Check expert sessions
@@ -290,7 +292,7 @@ export default function Dashboard({ user }: DashboardProps) {
       if (!sDateStr) return false;
       const hasDecision = s.decision && s.decision !== '';
       const isPending = s.status === 'pending';
-      return sDateStr < today && !hasDecision && isPending && !s.isRelayed && caseItem.status !== 'archive';
+      return (sDateStr < today || (sDateStr === today && localHour >= 13)) && !hasDecision && isPending && !s.isRelayed && caseItem.status !== 'archive';
     });
 
     const combinedOmitted = [...omittedRegular, ...omittedExpert];

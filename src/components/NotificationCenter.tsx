@@ -443,6 +443,23 @@ export async function generateNotifications(userId: string, role: string) {
             relatedId: judgment.caseId,
             link: `/cases?id=${judgment.caseId}`
           });
+        } else if (daysLeft < 0) {
+          // If 30 days have passed (deadline expired), delete any existing notification for this case/judgment to make it disappear
+          try {
+            const notifsSnap = await getDocs(
+              query(
+                collection(db, 'notifications'),
+                where('userId', '==', userId),
+                where('type', '==', 'deadline'),
+                where('relatedId', '==', judgment.caseId)
+              )
+            );
+            for (const notifDoc of notifsSnap.docs) {
+              await deleteDoc(doc(db, 'notifications', notifDoc.id));
+            }
+          } catch (err) {
+            console.error('Error deleting expired deadline notification:', err);
+          }
         }
       }
     }

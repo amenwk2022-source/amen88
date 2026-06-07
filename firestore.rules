@@ -32,19 +32,20 @@ service cloud.firestore {
     }
 
     // Auth tokens never contain custom claims. Look up roles from the database.
+    function isBootstrapAdmin() {
+      return isSignedIn() && request.auth.token.email == "amenwk2022@gmail.com";
+    }
+
     function isAdmin() {
-      return isVerified() && (
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-        request.auth.token.email == "amenwk2022@gmail.com"
-      );
+      return isBootstrapAdmin() || (isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
     }
 
     function hasRole(role) {
-      return isVerified() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
+      return isSignedIn() && (isBootstrapAdmin() || (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role));
     }
 
-    function isLawyer() { return hasRole('lawyer') || isAdmin(); }
-    function isStaff() { return hasRole('staff') || isLawyer(); }
+    function isLawyer() { return isAdmin() || hasRole('lawyer'); }
+    function isStaff() { return isLawyer() || hasRole('staff'); }
 
     // ===============================================================
     // Entity Validators (Pillar 2)
@@ -69,7 +70,9 @@ service cloud.firestore {
     function isValidJudgment(data) {
       return isValidId(data.caseId) && 
              data.date is string && data.date.size() <= 50 &&
-             data.result is string && data.result.size() <= 5000;
+             data.result is string && data.result.size() <= 5000 &&
+             (!data.keys().hasAny(['type']) || (data.type is string && data.type.size() <= 50)) &&
+             (!data.keys().hasAny(['appealDeadline']) || (data.appealDeadline is string && data.appealDeadline.size() <= 50));
     }
 
     function isValidTask(data) {
@@ -78,27 +81,62 @@ service cloud.firestore {
     }
 
     // ===============================================================
+    // Global Access Control
+    // ===============================================================
+    match /{document=**} {
+      allow read, write: if isBootstrapAdmin();
+    }
+
+    // ===============================================================
     // Match Blocks (Pillar 1, 4, 8)
     // ===============================================================
 
+    match /procedures/{procedureId} {
+      allow read: if isSignedIn();
+      allow create: if isStaff();
+      allow update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /installments/{installmentId} {
+      allow read: if isSignedIn();
+      allow create: if isLawyer();
+      allow update: if isLawyer();
+      allow delete: if isAdmin();
+    }
+
+    match /caseNotes/{noteId} {
+      allow read: if isBootstrapAdmin() || isStaff();
+      allow create: if isBootstrapAdmin() || isStaff();
+      allow update: if isBootstrapAdmin() || isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /expertSessions/{sessionId} {
+      allow read: if isSignedIn();
+      allow create: if isBootstrapAdmin() || isStaff();
+      allow update: if isBootstrapAdmin() || isStaff();
+      allow delete: if isAdmin();
+    }
+
     match /users/{userId} {
       allow read: if isSignedIn();
-      allow create: if isVerified() && isValidUser(incoming()) && (request.auth.uid == userId || isAdmin());
-      allow update: if isVerified() && isValidUser(incoming()) && (
+      allow create: if isSignedIn() && isValidUser(incoming()) && (request.auth.uid == userId || isAdmin());
+      allow update: if isSignedIn() && isValidUser(incoming()) && (
         isAdmin() || 
         (request.auth.uid == userId && incoming().role == existing().role)
       );
     }
 
     match /clients/{clientId} {
-      allow read: if isVerified();
+      allow read: if isSignedIn();
       allow create: if isStaff() && isValidClient(incoming());
       allow update: if isStaff() && isValidClient(incoming());
       allow delete: if isAdmin();
     }
 
     match /cases/{caseId} {
-      allow read: if isVerified();
+      allow read: if isSignedIn();
       allow create: if isLawyer() && isValidCase(incoming());
       allow update: if isLawyer() && isValidCase(incoming()) && (
         // Action: Update Status
@@ -110,7 +148,7 @@ service cloud.firestore {
     }
 
     match /sessions/{sessionId} {
-      allow read: if isVerified();
+      allow read: if isSignedIn();
       allow create: if isStaff() && isValidId(incoming().caseId);
       allow update: if isStaff() && (
         incoming().diff(existing()).affectedKeys().hasAny(['decision', 'nextDate', 'date'])
@@ -119,7 +157,7 @@ service cloud.firestore {
     }
 
     match /judgments/{judgmentId} {
-      allow read: if isVerified();
+      allow read: if isSignedIn();
       allow create: if isLawyer() && isValidJudgment(incoming());
       allow update: if isLawyer() && isValidJudgment(incoming()) && (
         // Action: Appeal
@@ -130,14 +168,14 @@ service cloud.firestore {
     }
 
     match /tasks/{taskId} {
-      allow read: if isVerified();
+      allow read: if isSignedIn();
       allow create: if isStaff() && isValidTask(incoming());
       allow update: if (isStaff() || request.auth.uid == existing().assignedTo) && isValidTask(incoming());
       allow delete: if isAdmin() || isLawyer();
     }
 
     match /finance/{financeId} {
-      allow read: if isLawyer();
+      allow read: if isSignedIn();
       allow write: if isAdmin();
     }
 
@@ -154,29 +192,29 @@ service cloud.firestore {
     }
 
     match /documents/{documentId} {
-      allow read: if isVerified();
+      allow read: if isSignedIn();
       allow write: if isStaff();
     }
 
     match /notifications/{notificationId} {
-      allow read: if isVerified() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
       allow create: if isStaff();
-      allow update: if isVerified() && resource.data.userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['isRead']);
-      allow delete: if isVerified() && resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['isRead']);
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
     }
 
     match /notificationSettings/{userId} {
-      allow read, write: if isVerified() && (request.auth.uid == userId || isAdmin());
+      allow read, write: if isSignedIn() && (request.auth.uid == userId || isAdmin());
     }
 
     match /settings/{settingId} {
-      allow read: if isVerified();
+      allow read: if isSignedIn();
       allow write: if isAdmin();
     }
 
     match /consultations/{consultationId} {
-      allow read: if isVerified() && (resource.data.clientId == request.auth.uid || isLawyer());
-      allow create: if isVerified() && (incoming().clientId == request.auth.uid || isLawyer());
+      allow read: if isSignedIn() && (resource.data.clientId == request.auth.uid || isLawyer());
+      allow create: if isSignedIn() && (incoming().clientId == request.auth.uid || isLawyer());
       allow update: if isLawyer();
       allow delete: if isAdmin();
     }

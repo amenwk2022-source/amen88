@@ -410,7 +410,8 @@ export default function SessionRelay({ user }: SessionRelayProps) {
   else if (day === 6) effectiveToday = addDays(now, 1);
   
   const todayStr = effectiveToday.toISOString().split('T')[0];
-  const realTodayStr = now.toISOString().split('T')[0];
+  const realTodayStr = new Date().toLocaleDateString('en-CA');
+  const localHour = new Date().getHours();
   
   const allSessionsWithCase = sessions
     .map(s => ({
@@ -430,7 +431,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
     if (activeTab === 'today') return sDate === todayStr && courtMatch;
     if (activeTab === 'upcoming') return sDate > todayStr && courtMatch;
     if (activeTab === 'omitted') {
-      const isOmittedRegular = sDate < realTodayStr && !s.decision && s.caseInfo?.status !== 'archive' && courtMatch;
+      const isOmittedRegular = (sDate < realTodayStr || (sDate === realTodayStr && localHour >= 13)) && !s.decision && s.caseInfo?.status !== 'archive' && courtMatch;
       return isOmittedRegular;
     }
     if (activeTab === 'search') return sDate === selectedDate && courtMatch;
@@ -446,7 +447,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
       if (!s.date || !s.caseInfo) return false;
       const sDate = s.date.split('T')[0];
       const courtMatch = selectedCourt === 'ALL' || s.caseInfo?.court === selectedCourt;
-      const isOmittedExpert = sDate < realTodayStr && s.status === 'pending' && !s.isRelayed && (!s.decision || s.decision === '') && s.caseInfo?.status !== 'archive' && courtMatch;
+      const isOmittedExpert = (sDate < realTodayStr || (sDate === realTodayStr && localHour >= 13)) && s.status === 'pending' && !s.isRelayed && (!s.decision || s.decision === '') && s.caseInfo?.status !== 'archive' && courtMatch;
       return isOmittedExpert;
     });
 
@@ -483,7 +484,8 @@ export default function SessionRelay({ user }: SessionRelayProps) {
     omitted: allSessionsWithCase.filter(s => {
       if (!s.date) return false;
       const courtMatch = selectedCourt === 'ALL' || s.caseInfo?.court === selectedCourt;
-      return s.date.split('T')[0] < realTodayStr && !s.decision && s.caseInfo?.status !== 'archive' && courtMatch;
+      const sDate = s.date.split('T')[0];
+      return (sDate < realTodayStr || (sDate === realTodayStr && localHour >= 13)) && !s.decision && s.caseInfo?.status !== 'archive' && courtMatch;
     }).length + omittedExpertSessions.length,
   };
 
@@ -896,8 +898,16 @@ export default function SessionRelay({ user }: SessionRelayProps) {
 
               {filteredSessions.length === 0 && (activeTab === 'omitted' ? omittedExpertSessions.length === 0 : filteredExpertSessions.length === 0) && (
                 <tr>
-                  <td colSpan={8} className="p-20 text-center text-slate-400 font-bold">
-                    لا توجد جلسات مسجلة لهذا التاريخ
+                  <td colSpan={activeTab === 'omitted' ? 8 : 7} className="p-20 text-center text-slate-400 font-bold">
+                    {activeTab === 'omitted' ? (
+                      <div className="flex flex-col items-center justify-center gap-3 text-emerald-600">
+                        <CheckCircle className="w-12 h-12 text-emerald-500" />
+                        <span className="text-base font-black text-slate-900">النظام آمن بالكامل</span>
+                        <span className="text-xs font-bold text-slate-500">لا توجد أي جلسات معلقة أو فائتة لم يتم ترحيل قراراتها</span>
+                      </div>
+                    ) : (
+                      'لا توجد جلسات مسجلة لهذا التاريخ'
+                    )}
                   </td>
                 </tr>
               )}

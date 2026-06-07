@@ -1656,14 +1656,15 @@ export default function CaseManagement({ user }: CaseManagementProps) {
 
                 {/* Omission Detector Warning */}
                 {(() => {
-                  const today = new Date().toISOString().split('T')[0];
+                  const localHour = new Date().getHours();
+                  const today = new Date().toLocaleDateString('en-CA');
                   const omittedReg = caseSessions.filter(s => {
                     const sDate = s.date?.split('T')[0];
-                    return sDate && sDate < today && !s.decision;
+                    return sDate && (sDate < today || (sDate === today && localHour >= 13)) && !s.decision;
                   });
                   const omittedExp = caseExpertSessions.filter(s => {
                     const sDate = s.date?.split('T')[0];
-                    return sDate && sDate < today && !s.decision && s.status === 'pending' && !s.isRelayed;
+                    return sDate && (sDate < today || (sDate === today && localHour >= 13)) && !s.decision && s.status === 'pending' && !s.isRelayed;
                   });
                   const totalOmitted = omittedReg.length + omittedExp.length;
 
