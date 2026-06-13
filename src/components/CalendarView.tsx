@@ -156,7 +156,10 @@ export default function CalendarView({ user }: CalendarViewProps) {
 
     const unsubJudgments = onSnapshot(collection(db, 'judgments'), (snapshot) => {
       const deadlineEvents = snapshot.docs
-        .filter(doc => doc.data().appealDeadline)
+        .filter(doc => {
+          const d = doc.data();
+          return d.appealDeadline && d.type === 'initial' && !d.isAppealed && d.appealStatus !== 'appealed';
+        })
         .map(doc => {
           const data = doc.data() as Judgment;
           const caseInfo = cases.find(c => c.id === data.caseId);

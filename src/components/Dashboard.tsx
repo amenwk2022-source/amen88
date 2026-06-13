@@ -172,10 +172,10 @@ export default function Dashboard({ user }: DashboardProps) {
     // Judgments (Deadlines)
     const judgmentsUnsub = onSnapshot(collection(db, 'judgments'), (snapshot) => {
       const judgments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Judgment));
-      const todayDateStr = new Date().toLocaleDateString('en-CA');
+      const todayDateStr = format(new Date(), 'yyyy-MM-dd');
       setActiveDeadlines(
         judgments
-          .filter(j => !j.isAppealed && j.appealDeadline >= todayDateStr)
+          .filter(j => j.type === 'initial' && !j.isAppealed && j.appealStatus !== 'appealed' && j.appealDeadline >= todayDateStr)
           .sort((a, b) => a.appealDeadline.localeCompare(b.appealDeadline))
           .slice(0, 3)
       );
@@ -272,7 +272,7 @@ export default function Dashboard({ user }: DashboardProps) {
       return;
     }
 
-    const today = new Date().toLocaleDateString('en-CA');
+    const today = format(new Date(), 'yyyy-MM-dd');
     const localHour = new Date().getHours();
     
     // Check regular sessions
@@ -281,7 +281,7 @@ export default function Dashboard({ user }: DashboardProps) {
       if (!caseItem) return false;
       const sDateStr = s.date?.split('T')[0];
       if (!sDateStr) return false;
-      return (sDateStr < today || (sDateStr === today && localHour >= 13)) && (!s.decision || s.decision === '') && caseItem.status !== 'archive';
+      return (sDateStr < today || (sDateStr === today && localHour >= 16)) && (!s.decision || s.decision.trim() === '') && caseItem.status !== 'archive';
     });
 
     // Check expert sessions
@@ -290,9 +290,9 @@ export default function Dashboard({ user }: DashboardProps) {
       if (!caseItem) return false;
       const sDateStr = s.date?.split('T')[0];
       if (!sDateStr) return false;
-      const hasDecision = s.decision && s.decision !== '';
+      const hasDecision = s.decision && s.decision.trim() !== '';
       const isPending = s.status === 'pending';
-      return (sDateStr < today || (sDateStr === today && localHour >= 13)) && !hasDecision && isPending && !s.isRelayed && caseItem.status !== 'archive';
+      return (sDateStr < today || (sDateStr === today && localHour >= 16)) && !hasDecision && isPending && !s.isRelayed && caseItem.status !== 'archive';
     });
 
     const combinedOmitted = [...omittedRegular, ...omittedExpert];
@@ -405,7 +405,11 @@ export default function Dashboard({ user }: DashboardProps) {
                 <AlertCircle className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-lg font-black text-red-900">تنبيه كاشف السهو والإجراءات العاجلة</h3>
+                <h3 className="text-lg font-black text-red-900">
+                  {omittedSessions.length > 0 
+                    ? "تنبيه كاشف السهو والإجراءات العاجلة" 
+                    : "تنبيه الإجراءات العاجلة والمواعيد الحرجة"}
+                </h3>
                 <p className="text-sm font-bold text-red-700/80">لديك {urgentActions.length} إجراءات معلقة تتطلب التدخل الفوري</p>
               </div>
             </div>
@@ -420,12 +424,14 @@ export default function Dashboard({ user }: DashboardProps) {
                   {action.title}
                 </button>
               ))}
-              <button
-                onClick={() => navigate('/sessions?tab=omitted')}
-                className="bg-red-600 text-white px-6 py-2 rounded-xl text-xs font-black shadow-lg shadow-red-100 hover:bg-red-700 transition-all"
-              >
-                فتح كاشف السهو
-              </button>
+              {omittedSessions.length > 0 && (
+                <button
+                  onClick={() => navigate('/sessions?tab=omitted')}
+                  className="bg-red-600 text-white px-6 py-2 rounded-xl text-xs font-black shadow-lg shadow-red-100 hover:bg-red-700 transition-all"
+                >
+                  فتح كاشف السهو
+                </button>
+              )}
             </div>
           </div>
         </motion.div>

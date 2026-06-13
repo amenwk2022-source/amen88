@@ -114,11 +114,17 @@ export default function Judgments({ user }: JudgmentsProps) {
     e.preventDefault();
     if (user.role === 'client') return;
     try {
+      const sanitizedData = {
+        ...formData,
+        appealDeadline: formData.type === 'initial' ? formData.appealDeadline : '',
+        appealStatus: formData.type === 'initial' ? formData.appealStatus : 'final',
+        isAppealed: formData.type === 'initial' ? formData.isAppealed : false
+      };
       if (editingJudgment) {
-        await updateDoc(doc(db, 'judgments', editingJudgment.id), formData);
+        await updateDoc(doc(db, 'judgments', editingJudgment.id), sanitizedData);
       } else {
         await addDoc(collection(db, 'judgments'), {
-          ...formData,
+          ...sanitizedData,
           createdAt: new Date().toISOString()
         });
 
@@ -320,7 +326,7 @@ export default function Judgments({ user }: JudgmentsProps) {
                   </span>
                 </div>
                 
-                {judgment.appealDeadline && (
+                {judgment.type === 'initial' && judgment.appealDeadline && (
                   <div className={cn(
                     "flex flex-col gap-2 p-4 rounded-2xl text-xs font-black",
                     judgment.isAppealed ? "bg-emerald-50 text-emerald-600 border border-emerald-100" :
@@ -347,20 +353,32 @@ export default function Judgments({ user }: JudgmentsProps) {
 
                 <div className="flex items-center justify-between pt-3 border-t border-slate-50">
                   <div className="flex items-center gap-2">
-                    {judgment.appealStatus === 'appealed' || judgment.isAppealed ? (
-                      <span className="flex items-center gap-1 text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">
-                        <CheckCircle2 className="w-3 h-3" />
-                        تم الاستئناف
-                      </span>
-                    ) : judgment.appealStatus === 'final' ? (
-                      <span className="flex items-center gap-1 text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg">
+                    {judgment.type === 'initial' ? (
+                      judgment.appealStatus === 'appealed' || judgment.isAppealed ? (
+                        <span className="flex items-center gap-1 text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">
+                          <CheckCircle2 className="w-3 h-3" />
+                          تم الاستئناف
+                        </span>
+                      ) : judgment.appealStatus === 'final' ? (
+                        <span className="flex items-center gap-1 text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg">
+                          <Scale className="w-3 h-3" />
+                          حكم نهائي
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-[10px] font-black text-slate-400 bg-slate-50 px-2 py-1 rounded-lg">
+                          <AlertCircle className="w-3 h-3" />
+                          بانتظار الاستئناف
+                        </span>
+                      )
+                    ) : judgment.type === 'appeal' ? (
+                      <span className="flex items-center gap-1 text-[10px] font-black text-purple-600 bg-purple-50 px-2 py-1 rounded-lg">
                         <Scale className="w-3 h-3" />
-                        حكم نهائي
+                        حكم استئناف
                       </span>
                     ) : (
-                      <span className="flex items-center gap-1 text-[10px] font-black text-slate-400 bg-slate-50 px-2 py-1 rounded-lg">
-                        <AlertCircle className="w-3 h-3" />
-                        بانتظار الاستئناف
+                      <span className="flex items-center gap-1 text-[10px] font-black text-rose-600 bg-rose-50 px-2 py-1 rounded-lg">
+                        <Scale className="w-3 h-3" />
+                        حكم تمييز
                       </span>
                     )}
                   </div>
@@ -458,8 +476,34 @@ export default function Judgments({ user }: JudgmentsProps) {
                   </div>
                 </div>
 
+                {formData.type === 'initial' && (
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-slate-700">آخر موعد للاستئناف</label>
+                      <input
+                        type="date"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                        value={formData.appealDeadline}
+                        onChange={(e) => setFormData({ ...formData, appealDeadline: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-slate-700">حالة الاستئناف</label>
+                      <select
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                        value={formData.appealStatus}
+                        onChange={(e) => setFormData({ ...formData, appealStatus: e.target.value as any, isAppealed: e.target.value === 'appealed' })}
+                      >
+                        <option value="pending">بانتظار الاستئناف</option>
+                        <option value="appealed">تم الاستئناف</option>
+                        <option value="final">حكم نهائي</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-2">
-                  <label className="text-sm font-bold text-slate-700">منطوق الحكم</label>
+                  <label className="text-sm font-bold text-slate-700">منطوق الحكم / النتيجة</label>
                   <textarea
                     required
                     rows={3}
@@ -470,28 +514,15 @@ export default function Judgments({ user }: JudgmentsProps) {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-700">آخر موعد للاستئناف</label>
-                    <input
-                      type="date"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
-                      value={formData.appealDeadline}
-                      onChange={(e) => setFormData({ ...formData, appealDeadline: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-700">حالة الاستئناف</label>
-                    <select
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
-                      value={formData.appealStatus}
-                      onChange={(e) => setFormData({ ...formData, appealStatus: e.target.value as any, isAppealed: e.target.value === 'appealed' })}
-                    >
-                      <option value="pending">بانتظار الاستئناف</option>
-                      <option value="appealed">تم الاستئناف</option>
-                      <option value="final">حكم نهائي</option>
-                    </select>
-                  </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-700">ملاحظات إضافية</label>
+                  <textarea
+                    rows={2}
+                    placeholder="أي ملاحظات إضافية..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+                    value={formData.notes || ''}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  />
                 </div>
 
                 <div className="pt-4 flex gap-4">

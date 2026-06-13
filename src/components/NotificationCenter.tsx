@@ -426,7 +426,7 @@ export async function generateNotifications(userId: string, role: string) {
         .filter(j => role !== 'client' || userCaseIds.includes(j.caseId));
 
       for (const judgment of judgments) {
-        if (judgment.isAppealed || !judgment.appealDeadline) continue;
+        if (judgment.type !== 'initial' || judgment.isAppealed || judgment.appealStatus === 'appealed' || !judgment.appealDeadline) continue;
         let deadlineDate: Date;
         try {
           deadlineDate = parseISO(judgment.appealDeadline);

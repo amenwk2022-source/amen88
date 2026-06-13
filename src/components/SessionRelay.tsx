@@ -31,6 +31,8 @@ export default function SessionRelay({ user }: SessionRelayProps) {
     const tab = params.get('tab');
     if (tab === 'omitted' || tab === 'today' || tab === 'upcoming' || tab === 'search') {
       setActiveTab(tab as any);
+    } else {
+      setActiveTab('today');
     }
   }, [location.search]);
 
@@ -599,7 +601,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
   else if (day === 6) effectiveToday = addDays(now, 1);
   
   const todayStr = effectiveToday.toISOString().split('T')[0];
-  const realTodayStr = new Date().toLocaleDateString('en-CA');
+  const realTodayStr = format(new Date(), 'yyyy-MM-dd');
   const localHour = new Date().getHours();
   
   const allSessionsWithCase = sessions
@@ -607,7 +609,13 @@ export default function SessionRelay({ user }: SessionRelayProps) {
       ...s,
       caseInfo: cases.find(c => c.id === s.caseId)
     }))
-    .filter(s => s.caseInfo); // Only keep sessions with case info (important for client role)
+    .filter(s => s.caseInfo) // Only keep sessions with case info (important for client role)
+    .sort((a, b) => {
+      if (activeTab === 'upcoming' || activeTab === 'omitted') {
+        return a.date.localeCompare(b.date);
+      }
+      return b.date.localeCompare(a.date);
+    });
 
   const filteredSessions = allSessionsWithCase.filter(s => {
     if (!s.date) {
@@ -620,7 +628,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
     if (activeTab === 'today') return sDate === todayStr && courtMatch;
     if (activeTab === 'upcoming') return sDate > todayStr && courtMatch;
     if (activeTab === 'omitted') {
-      const isOmittedRegular = (sDate < realTodayStr || (sDate === realTodayStr && localHour >= 13)) && !s.decision && s.caseInfo?.status !== 'archive' && courtMatch;
+      const isOmittedRegular = (sDate < realTodayStr || (sDate === realTodayStr && localHour >= 16)) && (!s.decision || s.decision.trim() === '') && s.caseInfo?.status !== 'archive' && courtMatch;
       return isOmittedRegular;
     }
     if (activeTab === 'search') return sDate === selectedDate && courtMatch;
@@ -636,9 +644,10 @@ export default function SessionRelay({ user }: SessionRelayProps) {
       if (!s.date || !s.caseInfo) return false;
       const sDate = s.date.split('T')[0];
       const courtMatch = selectedCourt === 'ALL' || s.caseInfo?.court === selectedCourt;
-      const isOmittedExpert = (sDate < realTodayStr || (sDate === realTodayStr && localHour >= 13)) && s.status === 'pending' && !s.isRelayed && (!s.decision || s.decision === '') && s.caseInfo?.status !== 'archive' && courtMatch;
+      const isOmittedExpert = (sDate < realTodayStr || (sDate === realTodayStr && localHour >= 16)) && s.status === 'pending' && !s.isRelayed && (!s.decision || s.decision.trim() === '') && s.caseInfo?.status !== 'archive' && courtMatch;
       return isOmittedExpert;
-    });
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
 
   const courts = ['ALL', ...new Set(cases.map(c => c.court).filter(Boolean))];
 
@@ -674,7 +683,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
       if (!s.date) return false;
       const courtMatch = selectedCourt === 'ALL' || s.caseInfo?.court === selectedCourt;
       const sDate = s.date.split('T')[0];
-      return (sDate < realTodayStr || (sDate === realTodayStr && localHour >= 13)) && !s.decision && s.caseInfo?.status !== 'archive' && courtMatch;
+      return (sDate < realTodayStr || (sDate === realTodayStr && localHour >= 16)) && (!s.decision || s.decision.trim() === '') && s.caseInfo?.status !== 'archive' && courtMatch;
     }).length + omittedExpertSessions.length,
   };
 
@@ -843,7 +852,10 @@ export default function SessionRelay({ user }: SessionRelayProps) {
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => {
+                setActiveTab(tab.id as any);
+                navigate(`/sessions?tab=${tab.id}`, { replace: true });
+              }}
               className={cn(
                 "flex items-center gap-2 px-6 py-4 font-bold text-sm transition-all border-b-2 -mb-px relative",
                 isActive 
