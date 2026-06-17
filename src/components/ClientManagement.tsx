@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, where } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, where, getDocs } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { Plus, Search, MoreVertical, Phone, CreditCard, MapPin, FileText, Trash2, Edit2, X, Check, Printer, Eye, Scale, Clock, Briefcase } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -46,6 +46,34 @@ export default function ClientManagement() {
     e.preventDefault();
     if (!selectedClientForCases) return;
     try {
+      // Check duplicate by caseNumber, year, court
+      if (caseFormData.caseNumber) {
+        const qCheck = query(
+          collection(db, 'cases'),
+          where('caseNumber', '==', caseFormData.caseNumber.trim()),
+          where('year', '==', caseFormData.year?.trim() || ''),
+          where('court', '==', caseFormData.court?.trim() || '')
+        );
+        const snapshot = await getDocs(qCheck);
+        if (!snapshot.empty) {
+          alert('عذراً، هذه القضية (رقم القضية، السنة والمحكمة) مسجلة بالفعل في النظام.');
+          return;
+        }
+      }
+
+      // Check duplicate by autoNumber
+      if (caseFormData.autoNumber) {
+        const qCheckAuto = query(
+          collection(db, 'cases'),
+          where('autoNumber', '==', caseFormData.autoNumber.trim())
+        );
+        const snapshotAuto = await getDocs(qCheckAuto);
+        if (!snapshotAuto.empty) {
+          alert('عذراً، الرقم الآلي لهذه القضية مسجل بالفعل لقضية أخرى.');
+          return;
+        }
+      }
+
       await addDoc(collection(db, 'cases'), {
         ...caseFormData,
         clientId: selectedClientForCases.id,
