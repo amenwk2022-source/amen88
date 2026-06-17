@@ -326,7 +326,7 @@ export default function Judgments({ user }: JudgmentsProps) {
                   </span>
                 </div>
                 
-                {judgment.type === 'initial' && judgment.appealDeadline && (
+                {judgment.type === 'initial' && judgment.appealDeadline && judgment.appealStatus === 'pending' && (
                   <div className={cn(
                     "flex flex-col gap-2 p-4 rounded-2xl text-xs font-black",
                     judgment.isAppealed ? "bg-emerald-50 text-emerald-600 border border-emerald-100" :
@@ -351,6 +351,24 @@ export default function Judgments({ user }: JudgmentsProps) {
                   </div>
                 )}
 
+                {judgment.type === 'initial' && judgment.appealStatus === 'no_appeal' && (
+                  <div className="flex flex-col gap-2 p-4 rounded-2xl text-xs font-black bg-slate-50 text-slate-500 border border-slate-200">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-slate-400" />
+                      <span>لن يتم الاستئناف (حكم نهائي بالتراضي / لا ينطبق)</span>
+                    </div>
+                  </div>
+                )}
+
+                {judgment.type === 'initial' && judgment.appealStatus === 'final' && (
+                  <div className="flex flex-col gap-2 p-4 rounded-2xl text-xs font-black bg-indigo-50 text-indigo-600 border border-indigo-100">
+                    <div className="flex items-center gap-2">
+                      <Scale className="w-4 h-4 text-indigo-500" />
+                      <span>حكم نهائي حائز قوة الأمر المقضي</span>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between pt-3 border-t border-slate-50">
                   <div className="flex items-center gap-2">
                     {judgment.type === 'initial' ? (
@@ -363,6 +381,11 @@ export default function Judgments({ user }: JudgmentsProps) {
                         <span className="flex items-center gap-1 text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg">
                           <Scale className="w-3 h-3" />
                           حكم نهائي
+                        </span>
+                      ) : judgment.appealStatus === 'no_appeal' ? (
+                        <span className="flex items-center gap-1 text-[10px] font-black text-slate-500 bg-slate-100 px-2 py-1 rounded-lg">
+                          <CheckCircle2 className="w-3 h-3 text-slate-400" />
+                          لن يتم الاستئناف
                         </span>
                       ) : (
                         <span className="flex items-center gap-1 text-[10px] font-black text-slate-400 bg-slate-50 px-2 py-1 rounded-lg">
@@ -497,6 +520,7 @@ export default function Judgments({ user }: JudgmentsProps) {
                         <option value="pending">بانتظار الاستئناف</option>
                         <option value="appealed">تم الاستئناف</option>
                         <option value="final">حكم نهائي</option>
+                        <option value="no_appeal">لن يتم الاستئناف / لا ينطبق</option>
                       </select>
                     </div>
                   </div>

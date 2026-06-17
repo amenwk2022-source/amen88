@@ -112,7 +112,7 @@ export interface Judgment {
   type: 'initial' | 'appeal' | 'cassation';
   result: string;
   appealDeadline: string; // ISO date
-  appealStatus: 'pending' | 'appealed' | 'final';
+  appealStatus: 'pending' | 'appealed' | 'final' | 'no_appeal';
   isAppealed: boolean;
   notes?: string;
 }

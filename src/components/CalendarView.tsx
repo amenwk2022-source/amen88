@@ -158,7 +158,7 @@ export default function CalendarView({ user }: CalendarViewProps) {
       const deadlineEvents = snapshot.docs
         .filter(doc => {
           const d = doc.data();
-          return d.appealDeadline && d.type === 'initial' && !d.isAppealed && d.appealStatus !== 'appealed';
+          return d.appealDeadline && d.type === 'initial' && !d.isAppealed && d.appealStatus === 'pending';
         })
         .map(doc => {
           const data = doc.data() as Judgment;

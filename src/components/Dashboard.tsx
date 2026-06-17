@@ -175,7 +175,7 @@ export default function Dashboard({ user }: DashboardProps) {
       const todayDateStr = format(new Date(), 'yyyy-MM-dd');
       setActiveDeadlines(
         judgments
-          .filter(j => j.type === 'initial' && !j.isAppealed && j.appealStatus !== 'appealed' && j.appealDeadline >= todayDateStr)
+          .filter(j => j.type === 'initial' && !j.isAppealed && j.appealStatus === 'pending' && j.appealDeadline >= todayDateStr)
           .sort((a, b) => a.appealDeadline.localeCompare(b.appealDeadline))
           .slice(0, 3)
       );

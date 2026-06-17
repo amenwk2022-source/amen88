@@ -82,7 +82,7 @@ export default function LegalDeadlines({ user }: LegalDeadlinesProps) {
           <div className="grid gap-4">
             {judgments.filter(judgment => {
               if (judgment.type !== 'initial') return false;
-              if (judgment.isAppealed || judgment.appealStatus === 'appealed') return false;
+              if (judgment.isAppealed || judgment.appealStatus !== 'pending') return false;
               if (!cases.some(c => c.id === judgment.caseId)) return false;
               if (!judgment.appealDeadline) return false;
               try {
@@ -167,7 +167,7 @@ export default function LegalDeadlines({ user }: LegalDeadlinesProps) {
               );
             })}
 
-            {judgments.filter(j => j.type === 'initial' && !j.isAppealed && j.appealStatus !== 'appealed' && cases.some(c => c.id === j.caseId)).length === 0 && (
+            {judgments.filter(j => j.type === 'initial' && !j.isAppealed && j.appealStatus === 'pending' && cases.some(c => c.id === j.caseId)).length === 0 && (
               <div className="text-center py-12 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
                 <CheckCircle2 className="w-12 h-12 text-slate-300 mx-auto mb-3" />
                 <p className="text-slate-400 font-bold">لا توجد مدد استئناف نشطة حالياً</p>

@@ -1806,10 +1806,9 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                                event.timelineType === 'procedure' ? event.notes : 
                                event.timelineType === 'expert' ? event.decision : event.result}
                             </p>
-                            {event.timelineType === 'judgment' && event.appealDeadline && (
+                            {event.timelineType === 'judgment' && event.appealDeadline && event.appealStatus === 'pending' && !event.isAppealed && (
                               <div className={cn(
                                 "mt-3 p-3 rounded-xl text-[10px] font-black flex items-center justify-between",
-                                event.isAppealed ? "bg-emerald-50 text-emerald-600" :
                                 isPast(parseISO(event.appealDeadline)) ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"
                               )}>
                                 <div className="flex items-center gap-2">
@@ -1817,7 +1816,7 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                                   <span>آخر موعد للاستئناف:</span>
                                   <span>{event.appealDeadline}</span>
                                 </div>
-                                {!event.isAppealed && !isPast(parseISO(event.appealDeadline)) && (
+                                {!isPast(parseISO(event.appealDeadline)) && (
                                   <div className="flex items-center gap-2">
                                     <Clock className="w-3 h-3" />
                                     <span>المتبقي:</span>
@@ -1826,8 +1825,20 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                                 )}
                               </div>
                             )}
+                            {event.timelineType === 'judgment' && event.appealStatus === 'no_appeal' && (
+                              <div className="mt-3 p-3 rounded-xl text-[10px] font-black flex items-center bg-slate-50 text-slate-500 border border-slate-100 gap-2">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>لن يتم الاستئناف (حكم نهائي بالتراضي / لا ينطبق)</span>
+                              </div>
+                            )}
+                            {event.timelineType === 'judgment' && event.appealStatus === 'final' && (
+                              <div className="mt-3 p-3 rounded-xl text-[10px] font-black flex items-center bg-indigo-50 text-indigo-600 border border-indigo-100 gap-2">
+                                <Scale className="w-3.5 h-3.5" />
+                                <span>حكم نهائي حائز قوة الأمر المقضي</span>
+                              </div>
+                            )}
 
-                            {event.timelineType === 'judgment' && event.type === 'initial' && !event.isAppealed && event.appealStatus !== 'appealed' && isLawyer && (
+                            {event.timelineType === 'judgment' && event.type === 'initial' && !event.isAppealed && event.appealStatus === 'pending' && isLawyer && (
                               <div className="mt-4 flex items-center justify-end">
                                 <button
                                   onClick={() => {
@@ -2180,6 +2191,7 @@ export default function CaseManagement({ user }: CaseManagementProps) {
                       <option value="pending">بانتظار الاستئناف</option>
                       <option value="appealed">تم الاستئناف</option>
                       <option value="final">حكم نهائي</option>
+                      <option value="no_appeal">لن يتم الاستئناف / لا ينبطق</option>
                     </select>
                   </div>
                 </div>
