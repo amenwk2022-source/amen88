@@ -59,6 +59,7 @@ const navItems = [
   { path: '/documents', label: 'الأرشيف الضوئي', icon: FileText, roles: ['admin', 'lawyer', 'staff', 'client'] },
   { path: '/finance', label: 'المالية', icon: DollarSign, roles: ['admin', 'lawyer', 'client'] },
   { path: '/consultations', label: 'الاستشارات', icon: MessageSquare, roles: ['admin', 'lawyer', 'client'] },
+  { path: '/ai-assistant', label: 'المساعد الذكي (المذكرات)', icon: Sparkles, roles: ['admin', 'lawyer', 'staff'] },
   { path: '/reports', label: 'التقارير', icon: TrendingUp, roles: ['admin', 'lawyer'] },
   { path: '/settings', label: 'الإعدادات', icon: Settings, roles: ['admin', 'lawyer', 'staff', 'client'] },
 ];

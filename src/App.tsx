@@ -21,6 +21,7 @@ import Tasks from './components/Tasks';
 import CalendarView from './components/CalendarView';
 import Judgments from './components/Judgments';
 import Consultations from './components/Consultations';
+import AILegalAssistant from './components/AILegalAssistant';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Toaster } from 'react-hot-toast';
 
@@ -91,6 +92,7 @@ export default function App() {
                   <Route path="/calendar" element={<CalendarView user={user} />} />
                   <Route path="/judgments" element={<Judgments user={user} />} />
                   <Route path="/consultations" element={<Consultations user={user} />} />
+                  <Route path="/ai-assistant" element={<AILegalAssistant user={user} />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </Layout>

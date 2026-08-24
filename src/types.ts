@@ -32,6 +32,8 @@ export interface Case {
   status: CaseStatus;
   lawyerId?: string;
   tag?: string;
+  subject?: string;
+  clientRole?: string;
   clientPosition?: 'plaintiff' | 'defendant' | 'appellant' | 'appellee';
   createdAt: string;
   initialSessionDate?: string;
@@ -116,6 +118,7 @@ export interface Judgment {
   appealStatus: 'pending' | 'appealed' | 'final' | 'no_appeal';
   isAppealed: boolean;
   notes?: string;
+  details?: string;
 }
 
 export interface ExpertSession {

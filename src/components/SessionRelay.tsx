@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, where, getDoc, deleteDoc, getDocs } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { CalendarClock, ArrowRightLeft, AlertCircle, CheckCircle2, Clock, Search, Filter, Download, MessageSquare, Save, X, Scale, FileText, ImageIcon, Trash2, Printer, CalendarDays, CheckCircle, XCircle, Plus, Edit2, ArrowRight, Gavel } from 'lucide-react';
+import { CalendarClock, ArrowRightLeft, AlertCircle, CheckCircle2, Clock, Search, Filter, Download, MessageSquare, Save, X, Scale, FileText, ImageIcon, Trash2, Printer, CalendarDays, CheckCircle, XCircle, Plus, Edit2, ArrowRight, Gavel, Share2, Layers, CheckSquare, Square, Copy } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Session, Case, UserProfile, ExpertSession, SystemSettings } from '../types';
 import { cn } from '../lib/utils';
@@ -10,6 +10,7 @@ import { format, isPast, isToday, isFuture, addDays } from 'date-fns';
 import { arSA } from 'date-fns/locale';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import toast from 'react-hot-toast';
 import ConfirmModal from './ConfirmModal';
 
 interface SessionRelayProps {
@@ -82,6 +83,18 @@ export default function SessionRelay({ user }: SessionRelayProps) {
   const [sessionToOmitId, setSessionToOmitId] = useState<string | null>(null);
   const [omittingType, setOmittingType] = useState<'regular' | 'expert'>('regular');
   const [omittedSearchQuery, setOmittedSearchQuery] = useState('');
+
+  // Batch Multi-Select & Actions State
+  const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>([]);
+  const [isBatchRelayModalOpen, setIsBatchRelayModalOpen] = useState(false);
+  const [batchDecision, setBatchDecision] = useState('تأجيل للاطلاع وتبادل المذكرات والمستندات');
+  const [batchNextDate, setBatchNextDate] = useState('');
+  const [batchAutoTask, setBatchAutoTask] = useState(true);
+  const [isBatchRelaying, setIsBatchRelaying] = useState(false);
+
+  // WhatsApp Roll Share State
+  const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
+  const [whatsAppText, setWhatsAppText] = useState('');
 
   useEffect(() => {
     let cq = query(collection(db, 'cases'), orderBy('createdAt', 'desc'));
@@ -159,6 +172,9 @@ export default function SessionRelay({ user }: SessionRelayProps) {
           lawyerId: selectedSession.lawyerId || '',
           createdAt: new Date().toISOString()
         });
+
+        // If not judgment, auto create task if decision has action words
+        await createAutoFollowUpTaskIfNeeded(selectedSession.caseId, selectedSession.lawyerId || user.uid, decision, nextDate);
       } else {
         // If judgment, create dynamic judgment record and update case status
         const defaultDeadline = addDays(new Date(), 30).toISOString().split('T')[0];
@@ -201,6 +217,7 @@ export default function SessionRelay({ user }: SessionRelayProps) {
       }
 
       setSuccess(true);
+      toast.success('تم ترحيل الجلسة بنجاح!');
       setTimeout(() => setSuccess(false), 3000);
       setIsDecisionModalOpen(false);
       setSelectedSession(null);
@@ -214,6 +231,174 @@ export default function SessionRelay({ user }: SessionRelayProps) {
     } finally {
       setIsRelaying(false);
     }
+  };
+
+  const createAutoFollowUpTaskIfNeeded = async (caseId: string, lawyerId: string, decisionText: string, targetNextDate?: string) => {
+    if (!decisionText) return;
+    const d = decisionText.toLowerCase();
+    
+    let taskTitle = '';
+    let subSteps: { id: string; title: string; status: 'pending' }[] = [];
+
+    if (d.includes('مذكرة') || d.includes('دفاع') || d.includes('تعقيب')) {
+      taskTitle = 'إعداد وتقديم مذكرة دفاع/تعقيب';
+      subSteps = [
+        { id: '1', title: 'مراجعة أوراق القضية ومذكرة الخصم', status: 'pending' },
+        { id: '2', title: 'صياغة المذكرة القانونية والأسانيد', status: 'pending' },
+        { id: '3', title: 'طباعة وتجهيز حوافظ المستندات المؤيدة', status: 'pending' },
+        { id: '4', title: 'إيداع المذكرة أو تقديمها بالجلسة', status: 'pending' }
+      ];
+    } else if (d.includes('خبير') || d.includes('أمانة') || d.includes('خبرة')) {
+      taskTitle = 'متابعة ملف إدارة الخبراء وسداد الأمانة';
+      subSteps = [
+        { id: '1', title: 'سداد أمانة الخبير المقررة في صندوق المحكمة', status: 'pending' },
+        { id: '2', title: 'متابعة ورود الملف لإدارة الخبراء وتحديد اسم الخبير', status: 'pending' },
+        { id: '3', title: 'حضور جلسات الخبرة وتقديم المستندات', status: 'pending' }
+      ];
+    } else if (d.includes('إعلان') || d.includes('اعلان')) {
+      taskTitle = 'إعلان صحيفة الدعوى / إعادة الإعلان';
+      subSteps = [
+        { id: '1', title: 'تسليم الصحيفة لقسم الإعلانات بالمحكمة', status: 'pending' },
+        { id: '2', title: 'متابعة مندوب الإعلان وتنفيذه أصولاً', status: 'pending' },
+        { id: '3', title: 'استلام أصل الإعلان وتقديمه لملف الجلسة', status: 'pending' }
+      ];
+    } else if (d.includes('مستند') || d.includes('شهادة') || d.includes('تصريح')) {
+      taskTitle = 'استخراج المستندات والشهادات المصرح بها قضائياً';
+      subSteps = [
+        { id: '1', title: 'استخراج صورة التصريح من محضر الجلسة', status: 'pending' },
+        { id: '2', title: 'مراجعة الجهة المختصة لاستخراج الشهادة', status: 'pending' },
+        { id: '3', title: 'إرفاق المستند بحافظة مستندات رسمية', status: 'pending' }
+      ];
+    }
+
+    if (taskTitle) {
+      let due = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      if (targetNextDate) {
+        const nextD = new Date(targetNextDate);
+        nextD.setDate(nextD.getDate() - 3);
+        if (nextD > new Date()) {
+          due = nextD.toISOString().split('T')[0];
+        }
+      }
+
+      try {
+        await addDoc(collection(db, 'tasks'), {
+          title: taskTitle,
+          description: `مهمة تم إنشاؤها تلقائياً بناءً على قرار الجلسة: "${decisionText}"`,
+          assignedTo: lawyerId || user.uid,
+          dueDate: due,
+          status: 'pending',
+          priority: 'high',
+          caseId: caseId,
+          createdAt: new Date().toISOString(),
+          subSteps: subSteps
+        });
+      } catch (e) {
+        console.error('Auto task creation error:', e);
+      }
+    }
+  };
+
+  const toggleSelectSession = (sessionId: string) => {
+    setSelectedSessionIds(prev =>
+      prev.includes(sessionId) ? prev.filter(id => id !== sessionId) : [...prev, sessionId]
+    );
+  };
+
+  const selectAllFilteredSessions = () => {
+    if (selectedSessionIds.length === filteredSessions.length) {
+      setSelectedSessionIds([]);
+    } else {
+      setSelectedSessionIds(filteredSessions.map(s => s.id));
+    }
+  };
+
+  const handleBatchRelay = async () => {
+    if (selectedSessionIds.length === 0 || !batchDecision || !batchNextDate) {
+      setError('يرجى تحديد تاريخ الجلسة القادمة والقرار للترحيل الجماعي');
+      return;
+    }
+
+    try {
+      setIsBatchRelaying(true);
+      setError(null);
+
+      for (const sessionId of selectedSessionIds) {
+        const sessionObj = sessions.find(s => s.id === sessionId);
+        if (!sessionObj) continue;
+
+        // 1. Update existing session
+        await updateDoc(doc(db, 'sessions', sessionId), {
+          decision: batchDecision,
+          nextDate: batchNextDate,
+          updatedAt: new Date().toISOString()
+        });
+
+        // 2. Add next session
+        await addDoc(collection(db, 'sessions'), {
+          caseId: sessionObj.caseId,
+          date: batchNextDate,
+          decision: '',
+          nextDate: '',
+          lawyerId: sessionObj.lawyerId || '',
+          createdAt: new Date().toISOString()
+        });
+
+        // 3. Auto task if enabled
+        if (batchAutoTask) {
+          await createAutoFollowUpTaskIfNeeded(sessionObj.caseId, sessionObj.lawyerId || user.uid, batchDecision, batchNextDate);
+        }
+      }
+
+      toast.success(`تم ترحيل وتأجيل (${selectedSessionIds.length}) جلسة بنجاح دفعة واحدة!`);
+      setSelectedSessionIds([]);
+      setIsBatchRelayModalOpen(false);
+      setBatchNextDate('');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'sessions');
+    } finally {
+      setIsBatchRelaying(false);
+    }
+  };
+
+  const generateWhatsAppRollText = (sessionList: any[]) => {
+    const dateFormatted = safeFormat(displayDate.toISOString(), 'EEEE dd/MM/yyyy');
+    let text = `📋 *رول الجلسات - ${systemSettings?.officeName || 'مكتب المحامي'}*\n`;
+    text += `📅 *التاريخ:* ${dateFormatted}\n`;
+    text += `🏛️ *المحكمة:* ${selectedCourt === 'ALL' ? 'جميع المحاكم' : selectedCourt}\n`;
+    text += `⚖️ *إجمالي الجلسات:* ${sessionList.length}\n`;
+    text += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+    sessionList.forEach((s, i) => {
+      text += `*${i + 1}️⃣ قضية رقم:* ${s.caseInfo?.caseNumber || '---'} / ${s.caseInfo?.year || ''}\n`;
+      text += `🏛️ *المحكمة:* ${s.caseInfo?.court || '---'} - *الدائرة:* ${s.caseInfo?.circuit || '---'}\n`;
+      text += `👤 *الموكل:* ${s.caseInfo?.clientName || '---'} (${s.caseInfo?.clientRole === 'plaintiff' ? 'مدعي' : 'مدعى عليه'})\n`;
+      text += `⚔️ *الخصم:* ${s.caseInfo?.opponent || '---'}\n`;
+      text += `📌 *القرار / الإجراء:* ${s.decision || 'بانتظار الرول والحضور'}\n`;
+      if (s.nextDate) {
+        text += `🔜 *الجلسة القادمة:* ${s.nextDate}\n`;
+      }
+      text += `─────────────────────\n`;
+    });
+
+    return text;
+  };
+
+  const handleOpenWhatsAppModal = (customSessions?: any[]) => {
+    const listToShare = customSessions && customSessions.length > 0 
+      ? customSessions 
+      : (selectedSessionIds.length > 0 
+          ? filteredSessions.filter(s => selectedSessionIds.includes(s.id))
+          : filteredSessions);
+    
+    if (listToShare.length === 0) {
+      toast.error('لا توجد جلسات لمشاركتها');
+      return;
+    }
+
+    const text = generateWhatsAppRollText(listToShare);
+    setWhatsAppText(text);
+    setIsWhatsAppModalOpen(true);
   };
 
   const handleAddSession = async (e: React.FormEvent) => {
@@ -887,6 +1072,13 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                 <span>إضافة جلسة</span>
               </button>
               <button 
+                onClick={() => handleOpenWhatsAppModal()}
+                className="flex items-center gap-2 bg-emerald-700 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-emerald-800 transition-all shadow-sm"
+              >
+                <Share2 className="w-4 h-4" />
+                <span>مشاركة واتساب</span>
+              </button>
+              <button 
                 onClick={() => window.print()}
                 className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-slate-900 transition-all shadow-sm"
               >
@@ -1056,6 +1248,19 @@ export default function SessionRelay({ user }: SessionRelayProps) {
           <table className="w-full text-right border-collapse print:border-t-0">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 print:bg-slate-900 print:text-white">
+                <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 w-12 text-center print:hidden">
+                  <button
+                    onClick={selectAllFilteredSessions}
+                    className="flex items-center justify-center w-full text-slate-500 hover:text-indigo-600 transition-colors"
+                    title={selectedSessionIds.length === filteredSessions.length ? "إلغاء تحديد الكل" : "تحديد الكل"}
+                  >
+                    {selectedSessionIds.length > 0 && selectedSessionIds.length === filteredSessions.length ? (
+                      <CheckSquare className="w-5 h-5 text-indigo-600" />
+                    ) : (
+                      <Square className="w-5 h-5 text-slate-400" />
+                    )}
+                  </button>
+                </th>
                 <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 w-12 text-center print:text-white print:border-slate-700 print:text-sm">#</th>
                 <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-white print:border-slate-700 print:text-sm">المحكمة</th>
                 <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-widest border-l border-slate-200 print:text-white print:border-slate-700 print:text-sm">الدائرة</th>
@@ -1074,9 +1279,22 @@ export default function SessionRelay({ user }: SessionRelayProps) {
                     key={session.id}
                     className={cn(
                       "transition-all hover:bg-slate-50 print:hover:bg-transparent print:border-b print:border-slate-200",
+                      selectedSessionIds.includes(session.id) ? "bg-indigo-50/50" : "",
                       session.decision ? "bg-emerald-50/30 print:bg-transparent" : ""
                     )}
                   >
+                    <td className="p-4 text-center border-l border-slate-100 print:hidden w-12">
+                      <button
+                        onClick={() => toggleSelectSession(session.id)}
+                        className="text-slate-400 hover:text-indigo-600 transition-colors"
+                      >
+                        {selectedSessionIds.includes(session.id) ? (
+                          <CheckSquare className="w-5 h-5 text-indigo-600" />
+                        ) : (
+                          <Square className="w-5 h-5" />
+                        )}
+                      </button>
+                    </td>
                     <td className="p-4 text-sm font-black text-slate-400 text-center border-l border-slate-100 print:text-slate-900 print:border-slate-200 print:text-base">
                       {index + 1}
                     </td>
@@ -2223,6 +2441,225 @@ export default function SessionRelay({ user }: SessionRelayProps) {
         cancelLabel="إلغاء"
         variant="warning"
       />
+
+      {/* Floating Bottom Batch Actions Toolbar */}
+      <AnimatePresence>
+        {selectedSessionIds.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-6 inset-x-0 mx-auto max-w-2xl bg-slate-900 text-white rounded-3xl p-4 shadow-2xl border border-slate-800 flex items-center justify-between gap-4 z-40 px-6 print:hidden"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-2xl bg-indigo-600 flex items-center justify-center font-black text-sm">
+                {selectedSessionIds.length}
+              </div>
+              <div>
+                <p className="text-xs font-bold text-slate-300">تم تحديد جلسات</p>
+                <p className="text-[11px] text-slate-400 font-medium">إجراءات جماعية سريعة</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsBatchRelayModalOpen(true)}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-md shadow-indigo-900/50"
+              >
+                <Layers className="w-4 h-4" />
+                ترحيل وتأجيل موحد
+              </button>
+
+              <button
+                onClick={() => handleOpenWhatsAppModal()}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5"
+                title="مشاركة المحدد عبر واتساب"
+              >
+                <Share2 className="w-4 h-4" />
+                واتساب
+              </button>
+
+              <button
+                onClick={() => setSelectedSessionIds([])}
+                className="p-2 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl transition-all"
+                title="إلغاء التحديد"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Batch Relay Modal */}
+      <AnimatePresence>
+        {isBatchRelayModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl p-6 lg:p-8 max-w-lg w-full shadow-2xl border border-slate-200 space-y-5"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+                    <Layers className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-slate-900 text-base">الترحيل والتأجيل الجماعي</h3>
+                    <p className="text-xs font-bold text-slate-400">تحديث ({selectedSessionIds.length}) جلسة بقرار وتاريخ موحد</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsBatchRelayModalOpen(false)}
+                  className="p-2 hover:bg-slate-100 rounded-xl transition-all"
+                >
+                  <X className="w-5 h-5 text-slate-400" />
+                </button>
+              </div>
+
+              {error && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs font-bold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">القرار المشترك للجلسات المحددة</label>
+                  <textarea
+                    rows={3}
+                    value={batchDecision}
+                    onChange={(e) => setBatchDecision(e.target.value)}
+                    placeholder="مثال: تأجيل للاطلاع وتبادل المذكرات والمستندات"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">تاريخ الجلسة القادمة الموحد</label>
+                  <input
+                    type="date"
+                    value={batchNextDate}
+                    onChange={(e) => setBatchNextDate(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    required
+                  />
+                </div>
+
+                <div className="p-3 bg-indigo-50/70 border border-indigo-100 rounded-2xl flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="batchAutoTask"
+                    checked={batchAutoTask}
+                    onChange={(e) => setBatchAutoTask(e.target.checked)}
+                    className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                  />
+                  <label htmlFor="batchAutoTask" className="text-xs font-bold text-indigo-950 cursor-pointer">
+                    إنشاء مهام متابعة تلقائية للمحامين (مثل: إعداد المذكرات أو متابعة الخبير)
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsBatchRelayModalOpen(false)}
+                  className="px-5 py-2.5 text-slate-600 hover:bg-slate-100 rounded-xl text-xs font-bold transition-all"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  disabled={isBatchRelaying || !batchNextDate || !batchDecision}
+                  onClick={handleBatchRelay}
+                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all shadow-md shadow-indigo-100 flex items-center gap-2 disabled:opacity-50"
+                >
+                  {isBatchRelaying ? 'جاري الترحيل الجماعي...' : `ترحيل (${selectedSessionIds.length}) جلسة الآن`}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* WhatsApp Share Modal */}
+      <AnimatePresence>
+        {isWhatsAppModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl p-6 lg:p-8 max-w-xl w-full shadow-2xl border border-slate-200 space-y-5"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+                    <Share2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-slate-900 text-base">مشاركة رول الجلسات عبر واتساب</h3>
+                    <p className="text-xs font-bold text-slate-400">تنسيق مخصص للمحامين ومجموعات العمل القضائية</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsWhatsAppModalOpen(false)}
+                  className="p-2 hover:bg-slate-100 rounded-xl transition-all"
+                >
+                  <X className="w-5 h-5 text-slate-400" />
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">معاينة النص المنسق</label>
+                <textarea
+                  rows={10}
+                  value={whatsAppText}
+                  onChange={(e) => setWhatsAppText(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-mono font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(whatsAppText);
+                    toast.success('تم نسخ النص المنسق بنجاح!');
+                  }}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                >
+                  <Copy className="w-4 h-4" />
+                  نسخ للحافظة
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsWhatsAppModalOpen(false)}
+                    className="px-4 py-2.5 text-slate-600 hover:bg-slate-100 rounded-xl text-xs font-bold transition-all"
+                  >
+                    إغلاق
+                  </button>
+                  <a
+                    href={`https://api.whatsapp.com/send?text=${encodeURIComponent(whatsAppText)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition-all shadow-md shadow-emerald-100 flex items-center gap-2"
+                  >
+                    <Share2 className="w-4 h-4" />
+                    فتح وإرسال في واتساب
+                  </a>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
