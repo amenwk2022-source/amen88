@@ -317,6 +317,23 @@ export default function Dashboard({ user }: DashboardProps) {
     };
   }, [user.uid, user.role]);
 
+  // Safe date helper for sessions
+  const getSafeSessionDate = (dateVal: any): string => {
+    if (!dateVal) return '';
+    if (typeof dateVal === 'string') return dateVal.split('T')[0];
+    if (dateVal && typeof dateVal.toDate === 'function') {
+      try {
+        return dateVal.toDate().toISOString().split('T')[0];
+      } catch {
+        return '';
+      }
+    }
+    if (dateVal instanceof Date && !isNaN(dateVal.getTime())) {
+      return dateVal.toISOString().split('T')[0];
+    }
+    return String(dateVal).split('T')[0] || '';
+  };
+
   useEffect(() => {
     if (cases.length === 0) {
       setOmittedSessions([]);
@@ -330,20 +347,25 @@ export default function Dashboard({ user }: DashboardProps) {
     const omittedRegular = allSessions.filter(s => {
       const caseItem = cases.find(c => c.id === s.caseId);
       if (!caseItem) return false;
-      const sDateStr = s.date?.split('T')[0];
+      const sDateStr = getSafeSessionDate(s.date);
       if (!sDateStr) return false;
-      return (sDateStr < today || (sDateStr === today && localHour >= 16)) && (!s.decision || s.decision.trim() === '') && caseItem.status !== 'archive';
+      const hasDecision = s.decision && s.decision.trim() !== '' && s.decision !== '---';
+      const isPassed = s.decision === 'تم التجاوز' || s.status === 'attended';
+      const isCaseClosed = caseItem.status === 'archive' || caseItem.status === 'judgment';
+      return (sDateStr < today || (sDateStr === today && localHour >= 16)) && !hasDecision && !isPassed && !isCaseClosed;
     });
 
     // Check expert sessions
     const omittedExpert = allExpertSessions.filter(s => {
       const caseItem = cases.find(c => c.id === s.caseId);
       if (!caseItem) return false;
-      const sDateStr = s.date?.split('T')[0];
+      const sDateStr = getSafeSessionDate(s.date);
       if (!sDateStr) return false;
-      const hasDecision = s.decision && s.decision.trim() !== '';
+      const hasDecision = s.decision && s.decision.trim() !== '' && s.decision !== '---';
       const isPending = s.status === 'pending';
-      return (sDateStr < today || (sDateStr === today && localHour >= 16)) && !hasDecision && isPending && !s.isRelayed && caseItem.status !== 'archive';
+      const isPassed = s.decision === 'تم التجاوز';
+      const isCaseClosed = caseItem.status === 'archive' || caseItem.status === 'judgment';
+      return (sDateStr < today || (sDateStr === today && localHour >= 16)) && !hasDecision && !isPassed && isPending && !s.isRelayed && !isCaseClosed;
     });
 
     const combinedOmitted = [...omittedRegular, ...omittedExpert];
@@ -356,14 +378,6 @@ export default function Dashboard({ user }: DashboardProps) {
       }
       return sliced;
     });
-
-    if (combinedOmitted.length > 0) {
-      console.log('Dashboard: Omission detection summary:', {
-        regular: omittedRegular.length,
-        expert: omittedExpert.length,
-        total: combinedOmitted.length
-      });
-    }
   }, [cases, allSessions, allExpertSessions]);
 
   useEffect(() => {
@@ -372,12 +386,14 @@ export default function Dashboard({ user }: DashboardProps) {
     
     // 1. Missed Decisions (from omittedSessions)
     omittedSessions.forEach(s => {
+      const matchedCase = cases.find(c => c.id === s.caseId);
+      const caseRefLabel = matchedCase ? `${matchedCase.caseNumber}/${matchedCase.year}` : 'قضية';
       urgent.push({
         id: `missed-${s.id}`,
-        title: 'قرار جلسة مفقود',
-        subtitle: `جلسة منتهية لم يتم ترحيل قرارها: ${s.caseId}`,
+        title: `قرار معلق: ${caseRefLabel}`,
+        subtitle: `جلسة لم يتم ترحيل قرارها: ${matchedCase?.clientName || ''}`,
         type: 'missed',
-        date: s.date,
+        date: getSafeSessionDate(s.date) || new Date().toISOString(),
         link: '/sessions?tab=omitted'
       });
     });

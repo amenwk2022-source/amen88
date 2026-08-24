@@ -46,6 +46,7 @@ export interface Session {
   nextDate?: string;
   lawyerId?: string;
   notes?: string;
+  status?: string;
   caseInfo?: Partial<Case>;
 }
 

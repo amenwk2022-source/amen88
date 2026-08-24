@@ -1825,15 +1825,31 @@ export default function CaseManagement({ user }: CaseManagementProps) {
 
                 {/* Omission Detector Warning */}
                 {(() => {
+                  if (selectedCaseDetails.status === 'archive' || selectedCaseDetails.status === 'judgment') return null;
+
                   const localHour = new Date().getHours();
                   const today = format(new Date(), 'yyyy-MM-dd');
+                  const getSafeDate = (d: any) => {
+                    if (!d) return '';
+                    if (typeof d === 'string') return d.split('T')[0];
+                    if (d?.toDate) {
+                      try { return d.toDate().toISOString().split('T')[0]; } catch { return ''; }
+                    }
+                    if (d instanceof Date && !isNaN(d.getTime())) return d.toISOString().split('T')[0];
+                    return String(d).split('T')[0] || '';
+                  };
+
                   const omittedReg = caseSessions.filter(s => {
-                    const sDate = s.date?.split('T')[0];
-                    return sDate && (sDate < today || (sDate === today && localHour >= 16)) && (!s.decision || s.decision.trim() === '');
+                    const sDate = getSafeDate(s.date);
+                    const hasDec = s.decision && s.decision.trim() !== '' && s.decision !== '---';
+                    const isSkipped = s.decision === 'تم التجاوز' || s.status === 'attended';
+                    return sDate && (sDate < today || (sDate === today && localHour >= 16)) && !hasDec && !isSkipped;
                   });
                   const omittedExp = caseExpertSessions.filter(s => {
-                    const sDate = s.date?.split('T')[0];
-                    return sDate && (sDate < today || (sDate === today && localHour >= 16)) && (!s.decision || s.decision.trim() === '') && s.status === 'pending' && !s.isRelayed;
+                    const sDate = getSafeDate(s.date);
+                    const hasDec = s.decision && s.decision.trim() !== '' && s.decision !== '---';
+                    const isSkipped = s.decision === 'تم التجاوز';
+                    return sDate && (sDate < today || (sDate === today && localHour >= 16)) && !hasDec && !isSkipped && s.status === 'pending' && !s.isRelayed;
                   });
                   const totalOmitted = omittedReg.length + omittedExp.length;
 
