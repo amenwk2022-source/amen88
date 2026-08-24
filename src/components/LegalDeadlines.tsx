@@ -3,10 +3,11 @@ import { collection, onSnapshot, query, where, orderBy, addDoc, doc, updateDoc }
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { Judgment, Case, AppNotification, UserProfile } from '../types';
 import { useNavigate } from 'react-router-dom';
-import { Gavel, Calendar, Clock, AlertTriangle, CheckCircle2, Bell, ExternalLink, ArrowRight } from 'lucide-react';
+import { Gavel, Calendar, Clock, AlertTriangle, CheckCircle2, Bell, ExternalLink, ArrowRight, EyeOff, XCircle } from 'lucide-react';
 import { format, differenceInDays, parseISO, addDays } from 'date-fns';
 import { arSA } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
+import toast from 'react-hot-toast';
 import { cn } from '../lib/utils';
 
 interface LegalDeadlinesProps {
@@ -58,6 +59,22 @@ export default function LegalDeadlines({ user }: LegalDeadlinesProps) {
   }, [user.uid, user.role]);
 
   const getJudgmentCase = (caseId: string) => cases.find(c => c.id === caseId);
+
+  const handleIgnoreDeadline = async (judgment: Judgment) => {
+    if (user.role === 'client') return;
+    const confirm = window.confirm('هل أنت متأكد من تجاهل هذا التنبيه وصرف النظر عن الاستئناف؟ سيتم إيقاف التنبيهات العاجلة المرتبطة به.');
+    if (!confirm) return;
+
+    try {
+      await updateDoc(doc(db, 'judgments', judgment.id), {
+        appealStatus: 'no_appeal',
+        updatedAt: new Date().toISOString()
+      });
+      toast.success('تم تجاهل التنبيه وصرف النظر عن الاستئناف بنجاح');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'judgments');
+    }
+  };
 
   return (
     <div className="space-y-8 rtl pb-20" dir="rtl">
@@ -146,7 +163,7 @@ export default function LegalDeadlines({ user }: LegalDeadlinesProps) {
                       </div>
                     </div>
 
-                    <div className="text-left flex flex-col items-end gap-4">
+                    <div className="text-left flex flex-col items-end gap-3">
                       <div className={cn(
                         "w-20 h-20 rounded-2xl flex flex-col items-center justify-center border-2",
                         isCritical ? "bg-red-600 border-red-700 text-white shadow-lg shadow-red-100" : "bg-white border-slate-100 text-slate-900"
@@ -154,13 +171,25 @@ export default function LegalDeadlines({ user }: LegalDeadlinesProps) {
                         <span className="text-2xl font-black">{daysLeft < 0 ? 0 : daysLeft}</span>
                         <span className="text-[10px] font-bold uppercase">يوم متبقي</span>
                       </div>
-                      <button 
-                        onClick={() => navigate(`/cases?id=${judgment.caseId}`)}
-                        className="text-indigo-600 text-[10px] font-black hover:underline flex items-center gap-1"
-                      >
-                        تفاصيل القضية
-                        <ArrowRight className="w-3 h-3" />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {user.role !== 'client' && (
+                          <button
+                            onClick={() => handleIgnoreDeadline(judgment)}
+                            className="text-slate-400 hover:text-red-600 text-[10px] font-black hover:bg-red-50 p-1.5 rounded-lg transition-all flex items-center gap-1 border border-transparent hover:border-red-100"
+                            title="تجاهل التنبيه وصرف النظر عن الاستئناف"
+                          >
+                            <EyeOff className="w-3 h-3" />
+                            <span>تجاهل</span>
+                          </button>
+                        )}
+                        <button 
+                          onClick={() => navigate(`/cases?id=${judgment.caseId}`)}
+                          className="text-indigo-600 text-[10px] font-black hover:underline flex items-center gap-1 bg-indigo-50/50 hover:bg-indigo-50 px-2.5 py-1.5 rounded-lg border border-indigo-100/50"
+                        >
+                          تفاصيل القضية
+                          <ArrowRight className="w-3 h-3" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </motion.div>

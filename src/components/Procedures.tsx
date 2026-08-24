@@ -102,9 +102,8 @@ export default function ProcedureManagement({ user }: ProcedureProps) {
   const filteredProcedures = procedures.filter(p => {
     const c = cases.find(caseItem => caseItem.id === p.caseId);
     if (!c) return false;
-    const procedureType = p.type ?? '';
     return (
-      procedureType.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c?.caseNumber?.includes(searchTerm) ||
       c?.clientName?.includes(searchTerm) ||
       c?.autoNumber?.includes(searchTerm)
@@ -184,7 +183,7 @@ export default function ProcedureManagement({ user }: ProcedureProps) {
                       <div className="p-2 bg-indigo-50 rounded-lg">
                         <ClipboardList className="w-5 h-5 text-indigo-600" />
                       </div>
-                      <h3 className="text-2xl font-black text-slate-900">{p.type || 'إجراء غير مسمى'}</h3>
+                      <h3 className="text-2xl font-black text-slate-900">{p.type}</h3>
                     </div>
                     <span className="text-sm font-bold text-slate-500 flex items-center gap-1">
                       <Clock className="w-4 h-4" />
@@ -291,7 +290,7 @@ export default function ProcedureManagement({ user }: ProcedureProps) {
                     type="text"
                     placeholder="مثال: تقديم طلب، استلام حكم، إعلان..."
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
-                    value={formData.type ?? ''}
+                    value={formData.type}
                     onChange={(e) => setFormData({ ...formData, type: e.target.value })}
                   />
                 </div>
