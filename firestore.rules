@@ -219,6 +219,24 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /executions/{executionId} {
+      allow read: if isSignedIn();
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /poas/{poaId} {
+      allow read: if isSignedIn();
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /criminalCases/{criminalCaseId} {
+      allow read: if isSignedIn();
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
     match /test/{docId} {
       allow read: if true;
     }

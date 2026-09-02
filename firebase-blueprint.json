@@ -147,6 +147,52 @@
         "status": { "type": "string" }
       },
       "required": ["clientId", "subject", "date", "status"]
+    },
+    "ExecutionFile": {
+      "title": "ExecutionFile",
+      "description": "Enforcement and judicial execution management file.",
+      "type": "object",
+      "properties": {
+        "executionNumber": { "type": "string" },
+        "court": { "type": "string" },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "opponentName": { "type": "string" },
+        "clientRole": { "type": "string", "enum": ["creditor", "debtor"] },
+        "totalAmount": { "type": "number" },
+        "collectedAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "completed", "suspended", "archived"] }
+      },
+      "required": ["executionNumber", "court", "clientName", "opponentName", "status"]
+    },
+    "PowerOfAttorney": {
+      "title": "PowerOfAttorney",
+      "description": "Legal power of attorney record.",
+      "type": "object",
+      "properties": {
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "poaNumber": { "type": "string" },
+        "authenticationOffice": { "type": "string" },
+        "issueDate": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "expired", "revoked"] }
+      },
+      "required": ["clientName", "poaNumber", "authenticationOffice", "issueDate", "status"]
+    },
+    "CriminalCase": {
+      "title": "CriminalCase",
+      "description": "Criminal case and detention tracking file.",
+      "type": "object",
+      "properties": {
+        "caseNumber": { "type": "string" },
+        "year": { "type": "string" },
+        "policeStation": { "type": "string" },
+        "charge": { "type": "string" },
+        "clientName": { "type": "string" },
+        "detentionStatus": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["caseNumber", "policeStation", "charge", "clientName", "status"]
     }
   },
   "firestore": {
@@ -164,6 +210,9 @@
     "/expertSessions/{sessionId}": { "schema": "object", "description": "Expert meeting sessions" },
     "/notifications/{notificationId}": { "schema": "object", "description": "System notifications" },
     "/notificationSettings/{userId}": { "schema": "object", "description": "User notification preferences" },
-    "/settings/{settingId}": { "schema": "object", "description": "Global system and office settings" }
+    "/settings/{settingId}": { "schema": "object", "description": "Global system and office settings" },
+    "/executions/{executionId}": { "schema": "ExecutionFile", "description": "Execution and enforcement files" },
+    "/poas/{poaId}": { "schema": "PowerOfAttorney", "description": "Power of attorney records" },
+    "/criminalCases/{criminalCaseId}": { "schema": "CriminalCase", "description": "Criminal and investigation records" }
   }
 }

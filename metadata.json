@@ -1,5 +1,6 @@
 {
   "name": "الأمين - نظام إدارة المكاتب القانونية",
   "description": "نظام متطور لإدارة المكاتب القانونية، يشمل تتبع القضايا، إدارة الجلسات، الأرشفة الضوئية، والتنبيهات المواعيد القانونية الكويتية.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
